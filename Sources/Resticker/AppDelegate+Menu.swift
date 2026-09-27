@@ -67,6 +67,10 @@ extension AppDelegate {
         let edit = NSMenuItem(title: "Edit Config", action: #selector(editConfig(_:)), keyEquivalent: "")
         edit.target = self
         menu.addItem(edit)
+
+        let password = NSMenuItem(title: "Set Repository Password…", action: #selector(setPassword(_:)), keyEquivalent: "")
+        password.target = self
+        menu.addItem(password)
         menu.addItem(.separator())
 
         let quit = NSMenuItem(title: "Quit", action: #selector(quit(_:)), keyEquivalent: "q")
@@ -129,6 +133,34 @@ extension AppDelegate {
             try? ConfigStore.writeExample()
         }
         openInTextEditor(Paths.configFile)
+    }
+
+    @objc func setPassword(_ sender: Any?) {
+        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+
+        let alert = NSAlert()
+        alert.messageText = "Set Repository Password"
+        alert.informativeText = "Stored in the keychain, used to unlock the restic repository."
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Set")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let password = field.stringValue
+        guard !password.isEmpty else { return }
+
+        if Keychain.savePassword(password) {
+            LogFile.shared.write("repository password set via menu")
+            refreshSnapshots()
+        } else {
+            let failure = NSAlert()
+            failure.messageText = "Could Not Save Password"
+            failure.informativeText = "See the log for details."
+            failure.runModal()
+        }
     }
 
     @objc func quit(_ sender: Any?) {

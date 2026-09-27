@@ -114,7 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func readinessProblems() -> [String] {
         var problems = config.problems()
         if !Keychain.hasPassword() {
-            problems.append("no password in keychain, run: make set-password")
+            problems.append("no password in keychain, set one via Set Repository Password… in the menu")
         }
         return problems
     }
@@ -267,7 +267,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Refreshes the snapshot list shown in the menu. Runs off the main thread since it
     /// shells out to restic; the menu keeps showing the previous list until this returns.
     /// Skipped while a backup holds the repository lock, since the run refreshes on finish.
-    private func refreshSnapshots() {
+    func refreshSnapshots() {
         // A password that reads back proves the keychain half of readinessProblems().
         guard runner == nil, !snapshotsLoading, config.problems().isEmpty,
               let password = Keychain.readPassword() else { return }

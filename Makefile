@@ -11,7 +11,7 @@ KEYCHAIN_ACCOUNT  := repository-password
 # identity (e.g. "Apple Development: you@example.com (TEAMID)") for a signed build.
 CODESIGN_IDENTITY ?= -
 
-.PHONY: all build test bundle install set-password run stop uninstall clean
+.PHONY: all build test bundle install run stop uninstall clean
 
 all: bundle
 
@@ -35,16 +35,7 @@ install: bundle stop
 	rm -rf $(INSTALLED_APP)
 	cp -R $(APP_BUNDLE) $(INSTALLED_APP)
 	@echo "installed $(INSTALLED_APP)"
-	@echo "next: make set-password"
-
-# Must run after install. The keychain access list is bound to the installed app path,
-# so the item can only pre-authorize an app that already exists.
-set-password: 
-	@test -d "$(INSTALLED_APP)" || (echo "run 'make install' first"; exit 1)
-	@security add-generic-password -U \
-		-s $(KEYCHAIN_SERVICE) -a $(KEYCHAIN_ACCOUNT) \
-		-T "$(INSTALLED_APP)" -w
-	@echo "password stored for service $(KEYCHAIN_SERVICE)"
+	@echo "next: open the app and use \"Set Repository Password…\" in the menu"
 
 run: install
 	open $(INSTALLED_APP)

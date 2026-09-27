@@ -50,22 +50,9 @@ open ~/Applications/Resticker.app
 
 ### Store your repository password
 
-Either way, once the app is installed, store your restic repository password in the
-keychain, scoped to that installed app:
-
-```sh
-make set-password
-```
-
-This must run after the app exists at `~/Applications/Resticker.app`, since the
-keychain access list is bound to that path. If you run it first, it has nothing to
-scope the keychain item to, and will fail. If you later re-sign or replace the app
-with a different identity, remove the old keychain item first:
-
-```sh
-security delete-generic-password -s resticker -a repository-password
-make set-password
-```
+Either way, once the app is installed and running, click the menu bar icon and choose
+**Set Repository Password…** to store your restic repository password in the keychain.
+Resticker can't start a backup until this is set.
 
 On first launch, Resticker creates `~/.config/resticker/config.json` with a commented
 example, then starts a backup right away (see Behavior below). Edit the file, either

@@ -1,7 +1,8 @@
 import Foundation
 import Security
 
-/// The repository password lives in a generic password item created by `make set-password`.
+/// The repository password lives in a generic password item, created from the
+/// Set Repository Password… menu item.
 public enum Keychain {
     public static let service = "resticker"
     public static let account = "repository-password"
@@ -35,5 +36,23 @@ public enum Keychain {
             return nil
         }
         return String(data: data, encoding: .utf8)
+    }
+
+    /// Creates or updates the generic password item. Because the app itself performs this
+    /// write, macOS grants it implicit read access to what it just wrote, with no
+    /// separate access-control step needed.
+    @discardableResult
+    public static func savePassword(_ password: String) -> Bool {
+        guard let data = password.data(using: .utf8) else { return false }
+        var status = SecItemUpdate(baseQuery() as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if status == errSecItemNotFound {
+            var newItem = baseQuery()
+            newItem[kSecValueData as String] = data
+            status = SecItemAdd(newItem as CFDictionary, nil)
+        }
+        if status != errSecSuccess {
+            LogFile.shared.write("keychain save failed with status \(status)")
+        }
+        return status == errSecSuccess
     }
 }
