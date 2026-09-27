@@ -48,6 +48,47 @@ open ~/Applications/Resticker.app
 
 `make install` builds the app and copies it to `~/Applications`.
 
+By default, `make install` ad-hoc signs the app. An ad-hoc signature has no stable
+identity, so it changes on every build. macOS ties keychain access to the exact
+signature that created an item, so after each `make install` you'll be asked to
+confirm access to your stored repository password again. See
+[Sign the app locally](#sign-the-app-locally) below to avoid this.
+
+### Sign the app locally
+
+To keep a stable signature across rebuilds (and stop the repeated keychain prompt),
+sign with your own identity instead of ad-hoc:
+
+1. List the codesigning identities in your keychain:
+
+   ```sh
+   security find-identity -v -p codesigning
+   ```
+
+   If you don't have one, open **Keychain Access** and create a self-signed
+   certificate (**Certificate Assistant → Create a Certificate…**, type
+   **Code Signing**). An Apple Developer account also works, if you have one.
+
+2. Copy `.env.example` to `.env` and set `CODESIGN_IDENTITY` to that identity's name:
+
+   ```sh
+   cp .env.example .env
+   ```
+
+   ```
+   CODESIGN_IDENTITY=Apple Development: you@example.com (TEAMID)
+   ```
+
+   If multiple identities share the same name, use the SHA-1 hash shown by
+   `security find-identity` instead, to pin the exact one.
+
+3. Run `make install` as usual. The Makefile reads `.env` automatically, so the
+   signature stays the same on every rebuild and macOS stops asking for your
+   keychain password.
+
+`.env` is gitignored, so your identity stays local. You can still override it for a
+single build without touching `.env`: `make install CODESIGN_IDENTITY="..."`.
+
 ### Store your repository password
 
 Either way, once the app is installed and running, click the menu bar icon and choose
@@ -91,4 +132,4 @@ A few things worth knowing before you rely on this:
 | `make uninstall` | Removes the app. Leaves your config and keychain item in place. |
 | `make clean` | Removes build output. |
 
-Override the signing identity with `make install CODESIGN_IDENTITY="..."`.
+See [Sign the app locally](#sign-the-app-locally) to set a stable `CODESIGN_IDENTITY`.

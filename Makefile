@@ -7,8 +7,13 @@ INSTALLED_APP     := $(INSTALL_DIR)/$(APP_NAME).app
 CONFIG_FILE       := $(HOME)/.config/resticker/config.json
 KEYCHAIN_SERVICE  := resticker
 KEYCHAIN_ACCOUNT  := repository-password
+-include .env
+export
+
 # "-" ad-hoc signs the app, which is enough to run it locally. Override with your own
 # identity (e.g. "Apple Development: you@example.com (TEAMID)") for a signed build.
+# Set CODESIGN_IDENTITY in .env (see .env.example) to avoid the keychain access prompt
+# that a changing ad-hoc signature causes on every reinstall.
 CODESIGN_IDENTITY ?= -
 
 .PHONY: all build test bundle install run stop uninstall clean
