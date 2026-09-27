@@ -107,7 +107,12 @@ public struct Config: Codable, Equatable {
         if sourcePaths.isEmpty {
             found.append("no source paths set")
         }
-        if !FileManager.default.isExecutableFile(atPath: expandedResticPath) {
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: expandedResticPath, isDirectory: &isDirectory)
+        // isExecutableFile(atPath:) alone would accept a directory: directories are
+        // "executable" (traversable) almost always, so a misconfigured resticPath that
+        // points at a folder must not read back as "configured".
+        if !exists || isDirectory.boolValue || !FileManager.default.isExecutableFile(atPath: expandedResticPath) {
             found.append("restic not found at \(resticPath)")
         }
         return found

@@ -24,6 +24,37 @@ final class ConfigTests: XCTestCase {
         let config = try JSONDecoder().decode(Config.self, from: Data(json.utf8))
         XCTAssertTrue(config.problems().contains("no repository set"))
     }
+
+    func testEmptySourcePathsIsReportedAsAProblem() throws {
+        var config = Config.default
+        config.sourcePaths = []
+        XCTAssertTrue(config.problems().contains("no source paths set"))
+    }
+
+    /// A directory is "executable" (traversable) almost always, so isExecutableFile alone
+    /// would wrongly accept a resticPath that points at a folder instead of the binary.
+    func testResticPathPointingAtADirectoryIsReportedAsAProblem() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("resticker-config-test-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        var config = Config.default
+        config.resticPath = directory.path
+        XCTAssertTrue(config.problems().contains { $0.hasPrefix("restic not found") })
+    }
+
+    func testMissingResticBinaryIsReportedAsAProblem() throws {
+        var config = Config.default
+        config.resticPath = "/no/such/binary-\(UUID().uuidString)"
+        XCTAssertTrue(config.problems().contains { $0.hasPrefix("restic not found") })
+    }
+
+    func testExecutableResticBinaryIsNotAProblem() throws {
+        var config = Config.default
+        config.resticPath = "/bin/ls"
+        XCTAssertFalse(config.problems().contains { $0.hasPrefix("restic not found") })
+    }
 }
 
 extension ConfigTests {
