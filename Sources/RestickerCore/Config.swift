@@ -133,6 +133,9 @@ public enum ConfigStore {
     public static func writeExample() throws {
         try FileManager.default.createDirectory(at: Paths.configDirectory, withIntermediateDirectories: true)
         try exampleData().write(to: Paths.configFile)
+        // The env dictionary can hold cloud-backend credentials, so the file must not be
+        // left world-readable at its default FileManager permissions.
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Paths.configFile.path)
     }
 
     /// The config file is edited by hand, so slashes stay unescaped.

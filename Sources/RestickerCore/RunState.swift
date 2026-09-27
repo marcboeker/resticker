@@ -93,6 +93,7 @@ public enum StateStore {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             encoder.dateEncodingStrategy = .iso8601
             try encoder.encode(state).write(to: Paths.stateFile)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Paths.stateFile.path)
         } catch {
             LogFile.shared.write("state save failed: \(error.localizedDescription)")
         }
