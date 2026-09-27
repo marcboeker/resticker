@@ -1,6 +1,6 @@
 cask "resticker" do
-  version "0.1.1"
-  sha256 "542e20b7b8e9a70dd386e911d7e2bf04d5536d9c38646ea85f6b1b8f5f2777df"
+  version "0.2.0"
+  sha256 "a2fc8f3529adfb02c8d78e889efcb65160f760086b9f3635add7c1bce0c47085"
 
   url "https://github.com/marcboeker/resticker/releases/download/v#{version}/Resticker-macos-arm64.zip"
   name "Resticker"
