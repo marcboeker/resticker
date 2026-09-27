@@ -8,7 +8,7 @@
   "repository": "/Volumes/Backup/restic",
 
   // Folders and files to back up.
-  "sourcePaths": ["/Users/tester"],
+  "sourcePaths": ["/Users/yourname"],
 
   // Optional file listing patterns to exclude from the backup, one per line, in
   // restic's exclude-file format. Set to null to disable.

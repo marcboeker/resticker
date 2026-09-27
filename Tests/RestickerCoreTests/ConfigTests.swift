@@ -60,6 +60,13 @@ final class ConfigTests: XCTestCase {
 extension ConfigTests {
     /// The repo's `config.example.json` is a human-readable mirror of the Swift string
     /// constant that the app actually writes on first launch. The two must never drift.
+    ///
+    /// `exampleText` fills in the real `sourcePaths` entry with the current user's home
+    /// directory at runtime, so the file the app writes is always correct for whoever
+    /// installs it. The repo copy can't do that — it's static — so it spells out
+    /// "/Users/yourname" there instead. That's the one substitution allowed before the
+    /// byte-for-byte comparison below, so this test still fails on any other drift
+    /// (comments, key names, values) on any machine, not just this one.
     func testRepoExampleFileMatchesTheEmbeddedConstant() throws {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent() // ConfigTests.swift
@@ -67,7 +74,8 @@ extension ConfigTests {
             .deletingLastPathComponent() // Tests
         let exampleURL = repoRoot.appendingPathComponent("config.example.json")
         let onDisk = try String(contentsOf: exampleURL, encoding: .utf8)
-        XCTAssertEqual(onDisk, ConfigStore.exampleText)
+        let normalized = onDisk.replacingOccurrences(of: "/Users/yourname", with: NSHomeDirectory())
+        XCTAssertEqual(normalized, ConfigStore.exampleText)
     }
 
     func testCommentStrippedExampleDecodesToDefaultConfig() throws {
