@@ -20,7 +20,7 @@ jobs:
         run: swift test
 
       - name: Build app bundle
-        run: make bundle
+        run: make bundle VERSION="${GITHUB_REF_NAME}"
 
       - name: Zip app bundle
         run: |

@@ -7,6 +7,7 @@ INSTALLED_APP     := $(INSTALL_DIR)/$(APP_NAME).app
 CONFIG_FILE       := $(HOME)/.config/resticker/config.json
 KEYCHAIN_SERVICE  := resticker
 KEYCHAIN_ACCOUNT  := repository-password
+VERSION           ?= main
 -include .env
 export
 
@@ -30,6 +31,7 @@ bundle: build
 	rm -rf $(APP_BUNDLE)
 	mkdir -p $(APP_BUNDLE)/Contents/MacOS $(APP_BUNDLE)/Contents/Resources
 	cp Resources/Info.plist $(APP_BUNDLE)/Contents/Info.plist
+	plutil -replace CFBundleShortVersionString -string "$(VERSION)" $(APP_BUNDLE)/Contents/Info.plist
 	cp Resources/AppIcon.icns $(APP_BUNDLE)/Contents/Resources/AppIcon.icns
 	cp $(BUILD_DIR)/$(APP_NAME) $(APP_BUNDLE)/Contents/MacOS/$(APP_NAME)
 	codesign --force --identifier $(BUNDLE_ID) --sign "$(CODESIGN_IDENTITY)" $(APP_BUNDLE)

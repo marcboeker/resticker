@@ -6,7 +6,7 @@ extension AppDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        menu.addItem(header("Resticker"))
+        menu.addItem(header("Resticker (\(appVersion))"))
         menu.addItem(.separator())
 
         let problems = readinessProblems()
@@ -76,6 +76,10 @@ extension AppDelegate {
         let quit = NSMenuItem(title: "Quit", action: #selector(quit(_:)), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "main"
     }
 
     private func header(_ title: String) -> NSMenuItem {
