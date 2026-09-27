@@ -19,9 +19,17 @@ in the menu.
 brew install restic
 ```
 
-Get the app one of two ways:
+Get the app one of three ways:
 
-### Option A: Download a release
+### Option A: Install via Homebrew
+
+```sh
+brew tap marcboeker/resticker https://github.com/marcboeker/resticker
+brew install --cask resticker
+open /Applications/Resticker.app
+```
+
+### Option B: Download a release
 
 Grab the latest `Resticker-macos-arm64.zip` from the
 [Releases page](https://github.com/marcboeker/resticker/releases), unzip it, and move
@@ -39,7 +47,7 @@ the quarantine flag yourself:
 xattr -dr com.apple.quarantine ~/Applications/Resticker.app
 ```
 
-### Option B: Build it yourself
+### Option C: Build it yourself
 
 Clone this repository, then build and install the app:
 

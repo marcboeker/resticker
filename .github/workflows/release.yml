@@ -52,3 +52,22 @@ jobs:
             dist/Resticker-macos-arm64.zip \
             --title "${GITHUB_REF_NAME}" \
             --notes "${{ steps.notes.outputs.notes }}"
+
+      - name: Update Homebrew cask
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHA256=$(shasum -a 256 dist/Resticker-macos-arm64.zip | awk '{print $1}')
+
+          git fetch origin main
+          git checkout main
+
+          sed -i '' "s/^  version \".*\"\$/  version \"${VERSION}\"/" Casks/resticker.rb
+          sed -i '' "s/^  sha256 \".*\"\$/  sha256 \"${SHA256}\"/" Casks/resticker.rb
+
+          if ! git diff --quiet -- Casks/resticker.rb; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add Casks/resticker.rb
+            git commit -m "chore: update cask to ${GITHUB_REF_NAME}"
+            git push origin HEAD:main
+          fi
