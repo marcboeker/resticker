@@ -1,0 +1,58 @@
+{
+  // Full path to the restic binary. Find yours with `which restic`.
+  "resticBinaryPath": "/opt/homebrew/bin/restic",
+
+  // Where restic stores your backups. Can be a local path, or a restic-supported
+  // remote such as "sftp:user@host:/path", "s3:https://s3.amazonaws.com/bucket", or
+  // "rest:https://user:pass@host:8000/".
+  "repository": "/Volumes/Backup/restic",
+
+  // Folders and files to back up.
+  "sourcePaths": ["/Users/tester"],
+
+  // Optional file listing patterns to exclude from the backup, one per line, in
+  // restic's exclude-file format. Set to null to disable.
+  "excludeFile": "~/.resticignore",
+
+  // How often, in minutes, a backup runs.
+  "backupIntervalMinutes": 240,
+
+  // How often, in hours, maintenance (forget + check) runs after a successful
+  // backup. 0 means maintenance runs after every backup.
+  "maintenanceIntervalHours": 24,
+
+  // How long, in minutes, to wait before retrying after a failed backup.
+  "retryDelayMinutes": 15,
+
+  // How many times to retry a failed backup, using retryDelayMinutes between
+  // attempts, before falling back to the regular backupIntervalMinutes schedule.
+  "maxRetries": 3,
+
+  // Whether to show a notification when a backup finishes successfully. Failures
+  // and maintenance errors always notify, regardless of this setting.
+  "notifyOnSuccessfulBackup": false,
+
+  // Extra environment variables passed to restic, useful for cloud backend
+  // credentials such as AWS_ACCESS_KEY_ID or RCLONE_CONFIG. For example:
+  // {"AWS_ACCESS_KEY_ID": "...", "AWS_SECRET_ACCESS_KEY": "..."}
+  "environmentVariables": {},
+
+  // Extra arguments passed to every restic invocation, before the subcommand.
+  "resticGlobalArgs": ["--compression", "max", "--pack-size", "64"],
+
+  // Extra arguments passed to `restic backup`.
+  "resticBackupArgs": ["--one-file-system", "--exclude-caches"],
+
+  // Extra arguments passed to `restic forget`, the maintenance step that prunes
+  // old snapshots. The defaults keep 6 hourly, 7 daily, 7 weekly, 4 monthly, and
+  // 12 yearly snapshots.
+  "resticForgetArgs": ["--prune", "-l", "6", "-d", "7", "-w", "7", "-m", "4", "-y", "12"],
+
+  // Extra arguments passed to `restic check`, the maintenance step that verifies
+  // repository integrity.
+  "resticCheckArgs": [],
+
+  // Extra arguments passed to `restic unlock`, which runs before every backup to
+  // clear a stale lock left by a previous crash or forced quit.
+  "resticUnlockArgs": []
+}

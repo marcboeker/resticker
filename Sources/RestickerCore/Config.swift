@@ -120,35 +120,103 @@ public struct Config: Codable, Equatable {
 }
 
 public enum ConfigStore {
-    /// Loads the config file, creating it from the defaults when it does not exist yet.
+    /// Loads the config file, creating it from the example when it does not exist yet.
+    /// Whole-line `//` comments are stripped before decoding.
     public static func load() throws -> Config {
         let url = Paths.configFile
         if !FileManager.default.fileExists(atPath: url.path) {
             try writeExample()
         }
         let data = try Data(contentsOf: url)
-        return try JSONDecoder().decode(Config.self, from: data)
+        let text = String(data: data, encoding: .utf8) ?? ""
+        return try JSONDecoder().decode(Config.self, from: Data(stripComments(text).utf8))
     }
 
     public static func writeExample() throws {
         try FileManager.default.createDirectory(at: Paths.configDirectory, withIntermediateDirectories: true)
-        try exampleData().write(to: Paths.configFile)
-        // The environmentVariables dictionary can hold cloud-backend credentials, so the file must not be
-        // left world-readable at its default FileManager permissions.
+        try Data(exampleText.utf8).write(to: Paths.configFile)
+        // The environmentVariables dictionary can hold cloud-backend credentials, so the
+        // file must not be left world-readable at its default FileManager permissions.
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Paths.configFile.path)
     }
 
-    /// The config file is edited by hand, so slashes stay unescaped.
-    public static func exampleData() throws -> Data {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        var example = Config.default
-        example.excludeFile = "~/.resticignore"
-        return try encoder.encode(example)
+    /// Removes every line whose trimmed content starts with `//`. Only whole-line comments
+    /// are supported: stripping from the first `//` found anywhere on a line would corrupt
+    /// a value that legitimately contains it, such as an s3 or rest-server repository URL.
+    public static func stripComments(_ text: String) -> String {
+        text
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
     }
 
     public static func modificationDate() -> Date? {
         let attrs = try? FileManager.default.attributesOfItem(atPath: Paths.configFile.path)
         return attrs?[.modificationDate] as? Date
     }
+
+    /// The commented example config, written verbatim to `Paths.configFile` on first launch.
+    /// Hand authored so it can carry real `//` comments, which `JSONEncoder` cannot produce.
+    /// An identical copy lives at the repo root as `config.example.json`; a test keeps the
+    /// two byte-identical.
+    public static let exampleText = #"""
+    {
+      // Full path to the restic binary. Find yours with `which restic`.
+      "resticBinaryPath": "/opt/homebrew/bin/restic",
+
+      // Where restic stores your backups. Can be a local path, or a restic-supported
+      // remote such as "sftp:user@host:/path", "s3:https://s3.amazonaws.com/bucket", or
+      // "rest:https://user:pass@host:8000/".
+      "repository": "/Volumes/Backup/restic",
+
+      // Folders and files to back up.
+      "sourcePaths": ["\#(NSHomeDirectory())"],
+
+      // Optional file listing patterns to exclude from the backup, one per line, in
+      // restic's exclude-file format. Set to null to disable.
+      "excludeFile": "~/.resticignore",
+
+      // How often, in minutes, a backup runs.
+      "backupIntervalMinutes": 240,
+
+      // How often, in hours, maintenance (forget + check) runs after a successful
+      // backup. 0 means maintenance runs after every backup.
+      "maintenanceIntervalHours": 24,
+
+      // How long, in minutes, to wait before retrying after a failed backup.
+      "retryDelayMinutes": 15,
+
+      // How many times to retry a failed backup, using retryDelayMinutes between
+      // attempts, before falling back to the regular backupIntervalMinutes schedule.
+      "maxRetries": 3,
+
+      // Whether to show a notification when a backup finishes successfully. Failures
+      // and maintenance errors always notify, regardless of this setting.
+      "notifyOnSuccessfulBackup": false,
+
+      // Extra environment variables passed to restic, useful for cloud backend
+      // credentials such as AWS_ACCESS_KEY_ID or RCLONE_CONFIG. For example:
+      // {"AWS_ACCESS_KEY_ID": "...", "AWS_SECRET_ACCESS_KEY": "..."}
+      "environmentVariables": {},
+
+      // Extra arguments passed to every restic invocation, before the subcommand.
+      "resticGlobalArgs": ["--compression", "max", "--pack-size", "64"],
+
+      // Extra arguments passed to `restic backup`.
+      "resticBackupArgs": ["--one-file-system", "--exclude-caches"],
+
+      // Extra arguments passed to `restic forget`, the maintenance step that prunes
+      // old snapshots. The defaults keep 6 hourly, 7 daily, 7 weekly, 4 monthly, and
+      // 12 yearly snapshots.
+      "resticForgetArgs": ["--prune", "-l", "6", "-d", "7", "-w", "7", "-m", "4", "-y", "12"],
+
+      // Extra arguments passed to `restic check`, the maintenance step that verifies
+      // repository integrity.
+      "resticCheckArgs": [],
+
+      // Extra arguments passed to `restic unlock`, which runs before every backup to
+      // clear a stale lock left by a previous crash or forced quit.
+      "resticUnlockArgs": []
+    }
+    """#
 }

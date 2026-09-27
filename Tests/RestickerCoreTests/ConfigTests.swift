@@ -58,11 +58,38 @@ final class ConfigTests: XCTestCase {
 }
 
 extension ConfigTests {
-    func testExampleFileKeepsSlashesReadable() throws {
-        let text = String(data: try ConfigStore.exampleData(), encoding: .utf8) ?? ""
-        XCTAssertFalse(text.contains("\\/"), "JSONEncoder escaped the slashes in a hand edited file")
-        XCTAssertTrue(text.contains("\"resticBinaryPath\" : \"/opt/homebrew/bin/restic\""))
-        let decoded = try JSONDecoder().decode(Config.self, from: try ConfigStore.exampleData())
-        XCTAssertEqual(decoded.excludeFile, "~/.resticignore")
+    /// The repo's `config.example.json` is a human-readable mirror of the Swift string
+    /// constant that the app actually writes on first launch. The two must never drift.
+    func testRepoExampleFileMatchesTheEmbeddedConstant() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent() // ConfigTests.swift
+            .deletingLastPathComponent() // RestickerCoreTests
+            .deletingLastPathComponent() // Tests
+        let exampleURL = repoRoot.appendingPathComponent("config.example.json")
+        let onDisk = try String(contentsOf: exampleURL, encoding: .utf8)
+        XCTAssertEqual(onDisk, ConfigStore.exampleText)
+    }
+
+    func testCommentStrippedExampleDecodesToDefaultConfig() throws {
+        let stripped = ConfigStore.stripComments(ConfigStore.exampleText)
+        let decoded = try JSONDecoder().decode(Config.self, from: Data(stripped.utf8))
+        XCTAssertEqual(decoded, Config.default)
+    }
+
+    func testCommentStrippingRemovesFullLineCommentsOnly() throws {
+        let text = #"""
+        {
+          // a comment line, must be removed
+          "repository": "rest:https://example.com/backups",
+          "sourcePaths": ["/data"]
+        }
+        """#
+        let stripped = ConfigStore.stripComments(text)
+        XCTAssertFalse(stripped.contains("a comment line"))
+        // A repository URL containing "//" on a real content line must survive untouched:
+        // stripping from the first "//" found anywhere on a line would corrupt it.
+        XCTAssertTrue(stripped.contains(#""repository": "rest:https://example.com/backups","#))
+        let decoded = try JSONDecoder().decode(Config.self, from: Data(stripped.utf8))
+        XCTAssertEqual(decoded.repository, "rest:https://example.com/backups")
     }
 }
