@@ -41,8 +41,8 @@ public enum Schedule {
 
     /// Maintenance runs at most once per cleanup interval, and only after a backup succeeded.
     public static func isCleanupDue(state: RunState, config: Config, now: Date) -> Bool {
-        if config.cleanupIntervalHours <= 0 { return true }
+        if config.maintenanceIntervalHours <= 0 { return true }
         guard let last = state.lastCleanupAt else { return true }
-        return now >= last.addingTimeInterval(config.cleanupInterval)
+        return now >= last.addingTimeInterval(config.maintenanceInterval)
     }
 }

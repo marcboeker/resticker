@@ -111,7 +111,7 @@ public final class BackupRunner {
 
         if options.unlock {
             emit(.stepStarted(.unlock))
-            let result = execute(.unlock, arguments: config.unlockArgs)
+            let result = execute(.unlock, arguments: config.resticUnlockArgs)
             if cancelled { return finish(.cancelled, step: nil, message: nil, maintenance: false) }
             if result.status != 0 {
                 return finish(.failure, step: .unlock, message: result.lastError, maintenance: false)
@@ -119,7 +119,7 @@ public final class BackupRunner {
         }
 
         emit(.stepStarted(.backup))
-        var backupArguments = config.backupArgs + ["--json"]
+        var backupArguments = config.resticBackupArgs + ["--json"]
         if let excludeFile = config.expandedExcludeFile, FileManager.default.fileExists(atPath: excludeFile) {
             backupArguments += ["--exclude-file", excludeFile]
         }
@@ -148,7 +148,7 @@ public final class BackupRunner {
 
         if options.cleanup {
             emit(.stepStarted(.forget))
-            let result = execute(.forget, arguments: config.forgetArgs)
+            let result = execute(.forget, arguments: config.resticForgetArgs)
             if cancelled { return finish(.success, step: nil, message: nil, maintenance: true) }
             if result.status != 0 {
                 return finish(.success, step: .forget, message: result.lastError, maintenance: true)
@@ -157,7 +157,7 @@ public final class BackupRunner {
 
         if options.check {
             emit(.stepStarted(.check))
-            let result = execute(.check, arguments: config.checkArgs)
+            let result = execute(.check, arguments: config.resticCheckArgs)
             if cancelled { return finish(.success, step: nil, message: nil, maintenance: true) }
             if result.status != 0 {
                 return finish(.success, step: .check, message: result.lastError, maintenance: true)

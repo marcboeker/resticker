@@ -235,7 +235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 iconState = .idle
                 state.append(RunRecord(date: now, outcome: .success, duration: outcome.duration,
                                        bytesAdded: state.lastBytesAdded))
-                if config.notifyOnSuccess {
+                if config.notifyOnSuccessfulBackup {
                     notify(title: "Resticker: backup finished",
                            body: "\(Formatting.bytes(state.lastBytesAdded)) in \(Formatting.duration(outcome.duration))")
                 }

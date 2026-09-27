@@ -4,10 +4,10 @@ import XCTest
 final class ScheduleTests: XCTestCase {
     private var config: Config {
         var value = Config.default
-        value.intervalMinutes = 240
+        value.backupIntervalMinutes = 240
         value.retryDelayMinutes = 15
         value.maxRetries = 3
-        value.cleanupIntervalHours = 24
+        value.maintenanceIntervalHours = 24
         return value
     }
 
@@ -75,7 +75,7 @@ final class ScheduleTests: XCTestCase {
 
     func testCleanupIntervalZeroRunsEveryTime() {
         var value = config
-        value.cleanupIntervalHours = 0
+        value.maintenanceIntervalHours = 0
         var state = RunState()
         state.lastCleanupAt = now
         XCTAssertTrue(Schedule.isCleanupDue(state: state, config: value, now: now))
