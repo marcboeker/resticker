@@ -198,6 +198,9 @@ public final class BackupRunner {
         do {
             try process.run()
         } catch {
+            lock.lock()
+            currentProcess = nil
+            lock.unlock()
             LogFile.shared.write("\(step.rawValue) could not start: \(error.localizedDescription)")
             return ExecutionResult(status: -1, lastError: error.localizedDescription)
         }
