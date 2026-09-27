@@ -31,7 +31,7 @@ public struct Config: Codable, Equatable {
         environmentVariables: [:],
         resticGlobalArgs: ["--compression", "max", "--pack-size", "64"],
         resticBackupArgs: ["--one-file-system", "--exclude-caches"],
-        resticForgetArgs: ["--prune", "-l", "6", "-d", "7", "-w", "7", "-m", "4", "-y", "12"],
+        resticForgetArgs: ["--prune", "-d", "4", "-w", "7", "-m", "4", "-y", "12"],
         resticCheckArgs: [],
         resticUnlockArgs: []
     )
@@ -206,9 +206,9 @@ public enum ConfigStore {
       "resticBackupArgs": ["--one-file-system", "--exclude-caches"],
 
       // Extra arguments passed to `restic forget`, the maintenance step that prunes
-      // old snapshots. The defaults keep 6 hourly, 7 daily, 7 weekly, 4 monthly, and
+      // old snapshots. The defaults keep 4 daily, 7 weekly, 4 monthly, and
       // 12 yearly snapshots.
-      "resticForgetArgs": ["--prune", "-l", "6", "-d", "7", "-w", "7", "-m", "4", "-y", "12"],
+      "resticForgetArgs": ["--prune", "-d", "4", "-w", "7", "-m", "4", "-y", "12"],
 
       // Extra arguments passed to `restic check`, the maintenance step that verifies
       // repository integrity.

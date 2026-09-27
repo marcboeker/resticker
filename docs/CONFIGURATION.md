@@ -161,10 +161,10 @@ Extra arguments passed to `restic backup`.
 ### `resticForgetArgs`
 
 - Type: array of strings
-- Default: `["--prune", "-l", "6", "-d", "7", "-w", "7", "-m", "4", "-y", "12"]`
+- Default: `["--prune", "-d", "4", "-w", "7", "-m", "4", "-y", "12"]`
 
 Extra arguments passed to `restic forget`, the maintenance step that prunes
-old snapshots. The default keeps 6 hourly, 7 daily, 7 weekly, 4 monthly, and
+old snapshots. The default keeps 4 daily, 7 weekly, 4 monthly, and
 12 yearly snapshots, and prunes the data those snapshots no longer reference.
 
 ### `resticCheckArgs`
