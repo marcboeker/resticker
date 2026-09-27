@@ -1,13 +1,25 @@
 APP_NAME          := Resticker
 BUNDLE_ID         := net.at6.resticker
 INSTALL_DIR       := $(HOME)/Applications
-BUILD_DIR         := .build/release
-APP_BUNDLE        := dist/$(APP_NAME).app
 INSTALLED_APP     := $(INSTALL_DIR)/$(APP_NAME).app
 KEYCHAIN_SERVICE  := resticker
 VERSION           ?= main
 -include .env
 export
+
+# ARCH selects a cross-compilation target (e.g. "arm64" or "x86_64") and builds
+# into an arch-specific scratch/output dir so both can be built without clobbering
+# each other. Leave unset for a plain native build in the usual .build/dist paths.
+ARCH ?=
+ifeq ($(ARCH),)
+BUILD_DIR         := .build/release
+APP_BUNDLE        := dist/$(APP_NAME).app
+SWIFT_BUILD_FLAGS :=
+else
+BUILD_DIR         := .build-$(ARCH)/release
+APP_BUNDLE        := dist/$(ARCH)/$(APP_NAME).app
+SWIFT_BUILD_FLAGS := --arch $(ARCH) --scratch-path .build-$(ARCH)
+endif
 
 # "-" ad-hoc signs the app, which is enough to run it locally. Override with your own
 # identity (e.g. "Apple Development: you@example.com (TEAMID)") for a signed build.
@@ -20,7 +32,7 @@ CODESIGN_IDENTITY ?= -
 all: bundle
 
 build:
-	swift build -c release
+	swift build -c release $(SWIFT_BUILD_FLAGS)
 
 test:
 	swift test
@@ -57,4 +69,4 @@ uninstall: stop
 	@echo "  security delete-generic-password -s $(KEYCHAIN_SERVICE) -a environment-variables"
 
 clean:
-	rm -rf .build dist
+	rm -rf .build .build-* dist

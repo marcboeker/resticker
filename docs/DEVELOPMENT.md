@@ -18,6 +18,12 @@ By default, `make install` ad-hoc signs the app, which forces a fresh
 keychain prompt on every rebuild. See [SIGNING.md](SIGNING.md) to set a
 stable `CODESIGN_IDENTITY` and avoid that.
 
+To cross-build for the other architecture, pass `ARCH=x86_64` or `ARCH=arm64`
+to `make build`/`make bundle`, e.g. `make bundle ARCH=x86_64`. This builds
+into an arch-specific `.build-<arch>` and `dist/<arch>` so it doesn't clobber
+a native build. Leave `ARCH` unset for the normal native build used by
+`make install`/`make run`.
+
 ## Resetting for testing
 
 Resticker stores its settings in UserDefaults, and the repository password

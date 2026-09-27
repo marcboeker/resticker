@@ -19,13 +19,17 @@ jobs:
       - name: Test
         run: swift test
 
-      - name: Build app bundle
-        run: make bundle VERSION="${GITHUB_REF_NAME}"
-
-      - name: Zip app bundle
+      - name: Build app bundles
         run: |
-          cd dist
-          zip -ry Resticker-macos-arm64.zip Resticker.app
+          make bundle VERSION="${GITHUB_REF_NAME}" ARCH=arm64
+          make bundle VERSION="${GITHUB_REF_NAME}" ARCH=x86_64
+
+      - name: Zip app bundles
+        run: |
+          cd dist/arm64
+          zip -ry ../Resticker-macos-arm64.zip Resticker.app
+          cd ../x86_64
+          zip -ry ../Resticker-macos-amd64.zip Resticker.app
 
       - name: Generate release notes
         id: notes
@@ -50,19 +54,22 @@ jobs:
         run: |
           gh release create "${GITHUB_REF_NAME}" \
             dist/Resticker-macos-arm64.zip \
+            dist/Resticker-macos-amd64.zip \
             --title "${GITHUB_REF_NAME}" \
             --notes "${{ steps.notes.outputs.notes }}"
 
       - name: Update Homebrew cask
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          SHA256=$(shasum -a 256 dist/Resticker-macos-arm64.zip | awk '{print $1}')
+          ARM_SHA256=$(shasum -a 256 dist/Resticker-macos-arm64.zip | awk '{print $1}')
+          AMD_SHA256=$(shasum -a 256 dist/Resticker-macos-amd64.zip | awk '{print $1}')
 
           git fetch origin main
           git checkout main
 
           sed -i '' "s/^  version \".*\"\$/  version \"${VERSION}\"/" Casks/resticker.rb
-          sed -i '' "s/^  sha256 \".*\"\$/  sha256 \"${SHA256}\"/" Casks/resticker.rb
+          perl -0777 -pi -e "s/(on_arm do\n\s*sha256 )\"[^\"]*\"/\${1}\"${ARM_SHA256}\"/" Casks/resticker.rb
+          perl -0777 -pi -e "s/(on_intel do\n\s*sha256 )\"[^\"]*\"/\${1}\"${AMD_SHA256}\"/" Casks/resticker.rb
 
           if ! git diff --quiet -- Casks/resticker.rb; then
             git config user.name "github-actions[bot]"

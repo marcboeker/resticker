@@ -5,15 +5,14 @@ Resticker:
 
 ## Download a release
 
-Grab the latest `Resticker-macos-arm64.zip` from the
-[Releases page](https://github.com/marcboeker/resticker/releases), unzip it, and move
+Grab the latest release from the
+[Releases page](https://github.com/marcboeker/resticker/releases): `Resticker-macos-arm64.zip`
+for Apple Silicon Macs, or `Resticker-macos-amd64.zip` for Intel Macs. Unzip it, and move
 `Resticker.app` to `~/Applications`. Then open it:
 
 ```sh
 open ~/Applications/Resticker.app
 ```
-
-This build is arm64 only, for Apple Silicon Macs.
 
 The app is ad-hoc signed, so macOS Gatekeeper will refuse to open it with a normal
 double-click the first time. Either right-click the app and choose **Open**, or clear

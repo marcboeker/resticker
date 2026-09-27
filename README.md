@@ -4,7 +4,7 @@
   <img src="docs/app-icon.png" alt="Resticker app icon" width="128">
 </p>
 
-Chuck Norris does not use Resticker. His files are too afraid to get lost. For
+*Chuck Norris does not use Resticker. His files are too afraid to get lost.* For
 everyone else, Resticker is a macOS menu bar app that runs [restic](https://restic.net)
 backups on a schedule. It backs up in the background, catches up after your Mac wakes
 from sleep, and shows the last backup time, how much data moved, and your recent
