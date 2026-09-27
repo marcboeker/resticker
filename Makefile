@@ -4,9 +4,7 @@ INSTALL_DIR       := $(HOME)/Applications
 BUILD_DIR         := .build/release
 APP_BUNDLE        := dist/$(APP_NAME).app
 INSTALLED_APP     := $(INSTALL_DIR)/$(APP_NAME).app
-CONFIG_FILE       := $(HOME)/.config/resticker/config.json
 KEYCHAIN_SERVICE  := resticker
-KEYCHAIN_ACCOUNT  := repository-password
 VERSION           ?= main
 -include .env
 export
@@ -42,7 +40,7 @@ install: bundle stop
 	rm -rf $(INSTALLED_APP)
 	cp -R $(APP_BUNDLE) $(INSTALLED_APP)
 	@echo "installed $(INSTALLED_APP)"
-	@echo "next: open the app and use \"Set Repository Password…\" in the menu"
+	@echo "next: open the app and finish setup in its menu bar item's Settings…"
 
 run: install
 	open $(INSTALLED_APP)
@@ -53,9 +51,10 @@ stop:
 uninstall: stop
 	rm -rf $(INSTALLED_APP)
 	@echo "removed $(INSTALLED_APP)"
-	@echo "keychain item and $(CONFIG_FILE) were left in place"
-	@echo "remove the password with:"
-	@echo "  security delete-generic-password -s $(KEYCHAIN_SERVICE) -a $(KEYCHAIN_ACCOUNT)"
+	@echo "settings (UserDefaults) and keychain items were left in place"
+	@echo "remove the keychain items with:"
+	@echo "  security delete-generic-password -s $(KEYCHAIN_SERVICE) -a repository-password"
+	@echo "  security delete-generic-password -s $(KEYCHAIN_SERVICE) -a environment-variables"
 
 clean:
 	rm -rf .build dist

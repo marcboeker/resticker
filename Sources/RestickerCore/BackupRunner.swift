@@ -49,7 +49,7 @@ public enum RunEvent {
 /// Runs the restic pipeline in the background and reports progress on the main queue.
 public final class BackupRunner {
     private let config: Config
-    private let password: String
+    private let secrets: RepositorySecrets
     private let options: PipelineOptions
     private let onEvent: (RunEvent) -> Void
 
@@ -59,9 +59,15 @@ public final class BackupRunner {
     private var currentProcess: Process?
     private var isCancelled = false
 
-    public init(config: Config, password: String, options: PipelineOptions, onEvent: @escaping (RunEvent) -> Void) {
+    /// `secrets` are read from the keychain by the caller right before starting a run.
+    public init(
+        config: Config,
+        secrets: RepositorySecrets,
+        options: PipelineOptions,
+        onEvent: @escaping (RunEvent) -> Void
+    ) {
         self.config = config
-        self.password = password
+        self.secrets = secrets
         self.options = options
         self.onEvent = onEvent
     }
@@ -148,7 +154,7 @@ public final class BackupRunner {
 
         if options.cleanup {
             emit(.stepStarted(.forget))
-            let result = execute(.forget, arguments: config.resticForgetArgs)
+            let result = execute(.forget, arguments: config.forgetArgs)
             if cancelled { return finish(.success, step: nil, message: nil, maintenance: true) }
             if result.status != 0 {
                 return finish(.success, step: .forget, message: result.lastError, maintenance: true)
@@ -179,8 +185,7 @@ public final class BackupRunner {
         arguments: [String],
         onLine: ((String) -> Void)? = nil
     ) -> ExecutionResult {
-        let process = ResticProcess.make(config: config, password: password,
-                                         arguments: [step.rawValue] + arguments)
+        let process = ResticProcess.make(config: config, secrets: secrets, arguments: [step.rawValue] + arguments)
 
         let output = Pipe()
         let errors = Pipe()

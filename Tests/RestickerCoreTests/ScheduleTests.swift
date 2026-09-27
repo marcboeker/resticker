@@ -81,6 +81,50 @@ final class ScheduleTests: XCTestCase {
         XCTAssertTrue(Schedule.isCleanupDue(state: state, config: value, now: now))
     }
 
+    func testAfterIntervalChangeLeavesAPendingRetryUntouched() {
+        var state = RunState()
+        state = Schedule.afterFailure(state: state, config: config, now: now)
+        XCTAssertEqual(state.retryCount, 1)
+        let dueBefore = state.nextDueAt
+
+        var changed = config
+        changed.backupIntervalMinutes = 30
+        let result = Schedule.afterIntervalChange(state: state, config: changed)
+        XCTAssertEqual(result.nextDueAt, dueBefore)
+    }
+
+    func testAfterIntervalChangeRecomputesFromLastSuccess() {
+        let state = Schedule.afterSuccess(state: RunState(), config: config, now: now)
+
+        var changed = config
+        changed.backupIntervalMinutes = 30
+        let result = Schedule.afterIntervalChange(state: state, config: changed)
+        XCTAssertEqual(result.nextDueAt, now.addingTimeInterval(30 * 60))
+    }
+
+    func testAfterIntervalChangeKeepsTheFallbackAfterRetriesRanOut() {
+        var state = Schedule.afterSuccess(state: RunState(), config: config, now: now.addingTimeInterval(-86_400))
+        var noRetries = config
+        noRetries.maxRetries = 0
+        state = Schedule.afterFailure(state: state, config: noRetries, now: now)
+        state.append(RunRecord(date: now, outcome: .failure, duration: 1, bytesAdded: 0))
+        XCTAssertEqual(state.retryCount, 0)
+        let dueBefore = state.nextDueAt
+
+        var changed = config
+        changed.backupIntervalMinutes = 30
+        let result = Schedule.afterIntervalChange(state: state, config: changed)
+        XCTAssertEqual(result.nextDueAt, dueBefore)
+    }
+
+    func testAfterIntervalChangeWithNoLastSuccessIsUnchanged() {
+        let state = RunState()
+        var changed = config
+        changed.backupIntervalMinutes = 30
+        let result = Schedule.afterIntervalChange(state: state, config: changed)
+        XCTAssertEqual(result, state)
+    }
+
     func testHistoryKeepsTheLastTwentyRuns() {
         var state = RunState()
         for index in 0..<25 {

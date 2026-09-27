@@ -2,33 +2,153 @@ import XCTest
 @testable import RestickerCore
 
 final class ConfigTests: XCTestCase {
-    func testPartialConfigFallsBackToDefaults() throws {
-        let json = #"{"repository":"sftp:nas:/backups/mac","backupIntervalMinutes":60}"#
-        let config = try JSONDecoder().decode(Config.self, from: Data(json.utf8))
-        XCTAssertEqual(config.repository, "sftp:nas:/backups/mac")
-        XCTAssertEqual(config.backupIntervalMinutes, 60)
-        XCTAssertEqual(config.resticGlobalArgs, ["--compression", "max", "--pack-size", "64"])
-        XCTAssertEqual(config.resticForgetArgs, Config.default.resticForgetArgs)
-        XCTAssertEqual(config.maintenanceIntervalHours, 24)
+    /// One fixed suite, wiped before and after each test, so these never touch the user's
+    /// real UserDefaults. A unique name per test would leave an empty plist behind in
+    /// ~/Library/Preferences on every run: removing a domain does not delete its file.
+    private func makeDefaults() -> UserDefaults {
+        let suiteName = "net.at6.resticker.tests"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
+        return defaults
     }
 
-    func testTildeExpansion() throws {
-        let json = #"{"excludeFile":"~/.resticignore","sourcePaths":["~/Documents"]}"#
-        let config = try JSONDecoder().decode(Config.self, from: Data(json.utf8))
-        XCTAssertEqual(config.expandedExcludeFile, NSHomeDirectory() + "/.resticignore")
-        XCTAssertEqual(config.expandedSourcePaths, [NSHomeDirectory() + "/Documents"])
+    func testSaveThenLoadRoundTripsTheDefaults() {
+        let defaults = makeDefaults()
+        ConfigStore.save(Config.default, to: defaults)
+        XCTAssertEqual(ConfigStore.load(from: defaults), Config.default)
     }
 
-    func testEmptyRepositoryIsReportedAsAProblem() throws {
-        let json = #"{"repository":"  "}"#
-        let config = try JSONDecoder().decode(Config.self, from: Data(json.utf8))
-        XCTAssertTrue(config.problems().contains("no repository set"))
+    func testSaveThenLoadRoundTripsACustomConfig() {
+        let defaults = makeDefaults()
+        var config = Config.default
+        config.resticBinaryPath = "/usr/local/bin/restic"
+        config.repository = "sftp:nas:/backups/mac"
+        config.sourcePaths = ["~/Documents", "~/Pictures"]
+        config.excludeFile = ""
+        config.backupIntervalMinutes = 60
+        config.keepDaily = 0
+        config.keepWeekly = 2
+        config.prune = false
+        config.resticForgetExtraArgs = ["--tag", "mac"]
+        config.unlockEnabled = false
+        config.forgetEnabled = false
+        config.checkEnabled = false
+
+        ConfigStore.save(config, to: defaults)
+        XCTAssertEqual(ConfigStore.load(from: defaults), config)
     }
 
-    func testEmptySourcePathsIsReportedAsAProblem() throws {
+    func testUnsetKeysLoadDefaults() {
+        let defaults = makeDefaults()
+        XCTAssertEqual(ConfigStore.load(from: defaults), Config.default)
+    }
+
+    /// `forgetEnabled` reuses the key the menu bar toggle wrote before Settings existed,
+    /// so upgrading users keep whatever they had set.
+    func testLegacyCleanupEnabledKeyMapsToForgetEnabled() {
+        let defaults = makeDefaults()
+        defaults.set(false, forKey: "cleanupEnabled")
+        XCTAssertFalse(ConfigStore.load(from: defaults).forgetEnabled)
+
+        defaults.set(true, forKey: "cleanupEnabled")
+        XCTAssertTrue(ConfigStore.load(from: defaults).forgetEnabled)
+    }
+
+    func testSaveWritesOneKeyPerFieldUnderTheLegacyNameForForgetEnabled() {
+        let defaults = makeDefaults()
+        var config = Config.default
+        config.forgetEnabled = false
+        config.keepDaily = 9
+        ConfigStore.save(config, to: defaults)
+        XCTAssertEqual(defaults.object(forKey: "cleanupEnabled") as? Bool, false)
+        XCTAssertNil(defaults.object(forKey: "forgetEnabled"))
+        XCTAssertEqual(defaults.object(forKey: "keepDaily") as? Int, 9)
+        XCTAssertEqual(defaults.array(forKey: "resticBackupArgs") as? [String], ["--one-file-system", "--exclude-caches"])
+    }
+
+    /// An empty exclude file is how "off" was stored before `excludeFile` stopped being
+    /// optional, so it must still load as off.
+    func testStoredEmptyExcludeFileLoadsAsOff() {
+        let defaults = makeDefaults()
+        defaults.set("", forKey: "excludeFile")
+        let config = ConfigStore.load(from: defaults)
+        XCTAssertEqual(config.excludeFile, "")
+        XCTAssertNil(config.expandedExcludeFile)
+    }
+
+    func testAWronglyTypedValueLoadsItsDefaultAndKeepsTheRest() {
+        let defaults = makeDefaults()
+        defaults.set("not a number", forKey: "keepDaily")
+        defaults.set("sftp:nas:/backups", forKey: "repository")
+        let config = ConfigStore.load(from: defaults)
+        XCTAssertEqual(config.keepDaily, Config.default.keepDaily)
+        XCTAssertEqual(config.repository, "sftp:nas:/backups")
+    }
+}
+
+// MARK: - forgetArgs
+
+extension ConfigTests {
+    func testForgetArgsBuildsOneFlagPerNonZeroKeepCount() {
+        var config = Config.default
+        config.keepDaily = 4
+        config.keepWeekly = 7
+        config.keepMonthly = 4
+        config.keepYearly = 12
+        config.prune = true
+        config.resticForgetExtraArgs = []
+        XCTAssertEqual(config.forgetArgs, [
+            "--keep-daily", "4",
+            "--keep-weekly", "7",
+            "--keep-monthly", "4",
+            "--keep-yearly", "12",
+            "--prune",
+        ])
+    }
+
+    func testForgetArgsOmitsZeroKeepCounts() {
+        var config = Config.default
+        config.keepDaily = 0
+        config.keepWeekly = 7
+        config.keepMonthly = 0
+        config.keepYearly = 0
+        config.prune = true
+        XCTAssertEqual(config.forgetArgs, ["--keep-weekly", "7", "--prune"])
+    }
+
+    func testForgetArgsOmitsPruneWhenOff() {
+        var config = Config.default
+        config.prune = false
+        XCTAssertFalse(config.forgetArgs.contains("--prune"))
+    }
+
+    func testForgetArgsAppendsExtraArgsAfterEverythingElse() {
+        var config = Config.default
+        config.resticForgetExtraArgs = ["--tag", "mac"]
+        XCTAssertEqual(config.forgetArgs.suffix(2), ["--tag", "mac"])
+    }
+}
+
+// MARK: - problems()
+
+extension ConfigTests {
+    func testEmptyRepositoryIsReportedAsAProblem() {
+        var config = Config.default
+        config.repository = "  "
+        XCTAssertTrue(config.problems().contains(.noRepository))
+    }
+
+    func testEmptySourcePathsIsReportedAsAProblem() {
         var config = Config.default
         config.sourcePaths = []
-        XCTAssertTrue(config.problems().contains("no source paths set"))
+        XCTAssertTrue(config.problems().contains(.noSourcePaths))
+    }
+
+    func testEmptyResticBinaryPathIsReportedAsAProblem() {
+        var config = Config.default
+        config.resticBinaryPath = ""
+        XCTAssertTrue(config.problems().contains(.resticNotFound(path: "")))
     }
 
     /// A directory is "executable" (traversable) almost always, so isExecutableFile alone
@@ -41,63 +161,54 @@ final class ConfigTests: XCTestCase {
 
         var config = Config.default
         config.resticBinaryPath = directory.path
-        XCTAssertTrue(config.problems().contains { $0.hasPrefix("restic not found") })
+        XCTAssertTrue(config.problems().contains(.resticNotFound(path: directory.path)))
     }
 
-    func testMissingResticBinaryIsReportedAsAProblem() throws {
+    func testMissingResticBinaryIsReportedAsAProblem() {
         var config = Config.default
         config.resticBinaryPath = "/no/such/binary-\(UUID().uuidString)"
-        XCTAssertTrue(config.problems().contains { $0.hasPrefix("restic not found") })
+        XCTAssertTrue(config.problems().contains { if case .resticNotFound = $0 { return true } else { return false } })
     }
 
-    func testExecutableResticBinaryIsNotAProblem() throws {
+    func testExecutableResticBinaryIsNotAProblem() {
         var config = Config.default
         config.resticBinaryPath = "/bin/ls"
-        XCTAssertFalse(config.problems().contains { $0.hasPrefix("restic not found") })
-    }
-}
-
-extension ConfigTests {
-    /// The repo's `config.example.json` is a human-readable mirror of the Swift string
-    /// constant that the app actually writes on first launch. The two must never drift.
-    ///
-    /// `exampleText` fills in the real `sourcePaths` entry with the current user's home
-    /// directory at runtime, so the file the app writes is always correct for whoever
-    /// installs it. The repo copy can't do that — it's static — so it spells out
-    /// "/Users/yourname" there instead. That's the one substitution allowed before the
-    /// byte-for-byte comparison below, so this test still fails on any other drift
-    /// (comments, key names, values) on any machine, not just this one.
-    func testRepoExampleFileMatchesTheEmbeddedConstant() throws {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent() // ConfigTests.swift
-            .deletingLastPathComponent() // RestickerCoreTests
-            .deletingLastPathComponent() // Tests
-        let exampleURL = repoRoot.appendingPathComponent("config.example.json")
-        let onDisk = try String(contentsOf: exampleURL, encoding: .utf8)
-        let normalized = onDisk.replacingOccurrences(of: "/Users/yourname", with: NSHomeDirectory())
-        XCTAssertEqual(normalized, ConfigStore.exampleText)
+        XCTAssertFalse(config.problems().contains { if case .resticNotFound = $0 { return true } else { return false } })
     }
 
-    func testCommentStrippedExampleDecodesToDefaultConfig() throws {
-        let stripped = ConfigStore.stripComments(ConfigStore.exampleText)
-        let decoded = try JSONDecoder().decode(Config.self, from: Data(stripped.utf8))
-        XCTAssertEqual(decoded, Config.default)
+    func testNoRetentionPolicyIsReportedOnlyWhenForgetIsEnabled() {
+        var config = Config.default
+        config.resticBinaryPath = "/bin/ls"
+        config.repository = "sftp:nas:/backups"
+        config.sourcePaths = ["~/Documents"]
+        config.keepDaily = 0
+        config.keepWeekly = 0
+        config.keepMonthly = 0
+        config.keepYearly = 0
+        config.prune = false
+        config.resticForgetExtraArgs = []
+
+        config.forgetEnabled = true
+        XCTAssertTrue(config.problems().contains(.noRetentionPolicy))
+
+        config.forgetEnabled = false
+        XCTAssertFalse(config.problems().contains(.noRetentionPolicy))
     }
 
-    func testCommentStrippingRemovesFullLineCommentsOnly() throws {
-        let text = #"""
-        {
-          // a comment line, must be removed
-          "repository": "rest:https://example.com/backups",
-          "sourcePaths": ["/data"]
-        }
-        """#
-        let stripped = ConfigStore.stripComments(text)
-        XCTAssertFalse(stripped.contains("a comment line"))
-        // A repository URL containing "//" on a real content line must survive untouched:
-        // stripping from the first "//" found anywhere on a line would corrupt it.
-        XCTAssertTrue(stripped.contains(#""repository": "rest:https://example.com/backups","#))
-        let decoded = try JSONDecoder().decode(Config.self, from: Data(stripped.utf8))
-        XCTAssertEqual(decoded.repository, "rest:https://example.com/backups")
+    /// `--prune` alone is not a keep policy, so it must not suppress `.noRetentionPolicy`;
+    /// only extra forget args (e.g. `--keep-tag`) count as an explicit policy here.
+    func testNoRetentionPolicyIsNotReportedWhenExtraArgsArePresent() {
+        var config = Config.default
+        config.resticBinaryPath = "/bin/ls"
+        config.repository = "sftp:nas:/backups"
+        config.sourcePaths = ["~/Documents"]
+        config.keepDaily = 0
+        config.keepWeekly = 0
+        config.keepMonthly = 0
+        config.keepYearly = 0
+        config.forgetEnabled = true
+        config.prune = false
+        config.resticForgetExtraArgs = ["--keep-tag", "pinned"]
+        XCTAssertFalse(config.problems().contains(.noRetentionPolicy))
     }
 }

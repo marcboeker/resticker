@@ -45,4 +45,22 @@ public enum Schedule {
         guard let last = state.lastCleanupAt else { return true }
         return now >= last.addingTimeInterval(config.maintenanceInterval)
     }
+
+    /// Recomputes the next due date after `backupIntervalMinutes` changes in Settings, so
+    /// a shorter interval takes effect right away instead of waiting for a due date that
+    /// was set under the old one.
+    public static func afterIntervalChange(state: RunState, config: Config) -> RunState {
+        // A pending retry is on its own short schedule; leave it alone regardless of what
+        // the regular interval just changed to.
+        guard state.retryCount == 0 else { return state }
+        // After the retries ran out, `nextDueAt` counts from that failure, not from the
+        // last success; recomputing from the success would restart the retry cycle at once.
+        guard state.history.last?.outcome != .failure else { return state }
+        guard let lastSuccess = state.lastSuccessAt else { return state }
+        var next = state
+        // If this lands in the past, that just means the next tick finds it due —
+        // isRunDue needs no special case for it.
+        next.nextDueAt = lastSuccess.addingTimeInterval(config.interval)
+        return next
+    }
 }

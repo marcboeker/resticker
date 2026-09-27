@@ -4,12 +4,40 @@
   <img src="docs/app-icon.png" alt="Resticker app icon" width="128">
 </p>
 
-Resticker is a macOS menu bar app that runs [restic](https://restic.net) backups on a
-schedule. It backs up in the background, catches up after your Mac wakes from sleep,
-and shows the last backup time, how much data moved, and your recent snapshots right
-in the menu.
+Chuck Norris does not use Resticker. His files are too afraid to get lost. For
+everyone else, Resticker is a macOS menu bar app that runs [restic](https://restic.net)
+backups on a schedule. It backs up in the background, catches up after your Mac wakes
+from sleep, and shows the last backup time, how much data moved, and your recent
+snapshots right in the menu.
 
-<img src="docs/screenshot.png" alt="Resticker menu bar dropdown" width="320">
+<p align="center">
+  <img src="docs/resticker.png" alt="Resticker menu bar dropdown" height="400">
+  <img src="docs/settings.png" alt="Resticker settings window" height="400">
+</p>
+
+## Why Resticker
+
+- **Catch-up runs** — if your Mac was asleep through a scheduled backup, Resticker runs
+  it once after waking, instead of replaying every slot it missed.
+- **Menu bar status** — last backup time, data transferred, next scheduled run, and
+  your recent snapshots, all visible without opening a terminal.
+- **Scheduled maintenance** — `restic forget --prune` and `restic check` run
+  automatically on their own interval after a successful backup, so retention and
+  integrity checks don't need a separate cron job.
+- **Automatic retries** — a failed backup retries a configurable number of times, with
+  a delay between attempts, before falling back to the regular schedule.
+- **Keychain-backed secrets** — your restic repository password and any cloud
+  credentials are stored in the macOS keychain, not a config file.
+- **Any restic backend** — local disks, SFTP, S3, or any other repository location
+  restic supports, plus any extra restic arguments or environment variables your setup
+  needs.
+- **macOS notifications** — always on failure, optionally on success too.
+
+### Why not just a cron job?
+
+A cron entry misses runs while your Mac sleeps, gives no status without digging
+through logs, and rarely gets a `forget`/`check` step added alongside it. Resticker
+closes those three gaps; it doesn't replace restic.
 
 ## Getting Started
 
@@ -19,9 +47,7 @@ in the menu.
 brew install restic
 ```
 
-Get the app one of three ways:
-
-### Option A: Install via Homebrew
+### 1. Install via Homebrew
 
 ```sh
 brew tap marcboeker/resticker https://github.com/marcboeker/resticker
@@ -29,104 +55,29 @@ brew install --cask resticker
 open /Applications/Resticker.app
 ```
 
-### Option B: Download a release
+Prefer to download a release directly or build the app yourself instead? See
+[docs/INSTALL.md](docs/INSTALL.md).
 
-Grab the latest `Resticker-macos-arm64.zip` from the
-[Releases page](https://github.com/marcboeker/resticker/releases), unzip it, and move
-`Resticker.app` to `~/Applications`. Then open it:
+### 2. Configure
 
-```sh
-open ~/Applications/Resticker.app
-```
+On first launch, Resticker has no repository, so it opens **Settings…** (⌘,) by
+itself. On the **Repository** page, enter your repository location and password —
+the password goes straight to the keychain. On the **Backup** page, add your source
+paths. Everything else has a sensible default and is explained next to its own
+setting in the window. Every change saves and applies right away, so there is
+nothing to reload or restart.
 
-The app is ad-hoc signed, so macOS Gatekeeper will refuse to open it with a normal
-double-click the first time. Either right-click the app and choose **Open**, or clear
-the quarantine flag yourself:
-
-```sh
-xattr -dr com.apple.quarantine ~/Applications/Resticker.app
-```
-
-### Option C: Build it yourself
-
-Clone this repository, then build and install the app:
-
-```sh
-git clone https://github.com/marcboeker/resticker.git
-cd resticker
-make install
-open ~/Applications/Resticker.app
-```
-
-`make install` builds the app and copies it to `~/Applications`.
-
-By default, `make install` ad-hoc signs the app. An ad-hoc signature has no stable
-identity, so it changes on every build. macOS ties keychain access to the exact
-signature that created an item, so after each `make install` you'll be asked to
-confirm access to your stored repository password again. See
-[Sign the app locally](#sign-the-app-locally) below to avoid this.
-
-### Sign the app locally
-
-To keep a stable signature across rebuilds (and stop the repeated keychain prompt),
-sign with your own identity instead of ad-hoc:
-
-1. List the codesigning identities in your keychain:
-
-   ```sh
-   security find-identity -v -p codesigning
-   ```
-
-   If you don't have one, open **Keychain Access** and create a self-signed
-   certificate (**Certificate Assistant → Create a Certificate…**, type
-   **Code Signing**). An Apple Developer account also works, if you have one.
-
-2. Copy `.env.example` to `.env` and set `CODESIGN_IDENTITY` to that identity's name:
-
-   ```sh
-   cp .env.example .env
-   ```
-
-   ```
-   CODESIGN_IDENTITY=Apple Development: you@example.com (TEAMID)
-   ```
-
-   If multiple identities share the same name, use the SHA-1 hash shown by
-   `security find-identity` instead, to pin the exact one.
-
-3. Run `make install` as usual. The Makefile reads `.env` automatically, so the
-   signature stays the same on every rebuild and macOS stops asking for your
-   keychain password.
-
-`.env` is gitignored, so your identity stays local. You can still override it for a
-single build without touching `.env`: `make install CODESIGN_IDENTITY="..."`.
-
-### Store your repository password
-
-Either way, once the app is installed and running, click the menu bar icon and choose
-**Set Repository Password…** to store your restic repository password in the keychain.
-Resticker can't start a backup until this is set.
-
-On first launch, Resticker creates `~/.config/resticker/config.json` with a commented
-example, then starts a backup right away (see Behavior below). Edit the file, either
-by hand or with **Edit Config** in the menu, to point `resticBinaryPath`,
-`repository`, and `sourcePaths` at your own setup before or after that first run.
-Changes are picked up automatically the moment you save.
-
-Once that's set, click the menu bar icon and tick **Start at Login** so Resticker
-keeps backing up after a restart.
-
-## Configuration
-
-Every setting, the retention policy, and any extra restic arguments live in
-`~/.config/resticker/config.json`. See
-[docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the full list of keys.
+You can reopen Settings any time from the menu bar icon. By default, Resticker
+backs up every 4 hours and runs maintenance (forget + check) once a day.
 
 ## Behavior
 
 A few things worth knowing before you rely on this:
 
-- The first launch has no recorded backup, so one starts right away.
+- Resticker refuses to start a backup while the repository, a source path, or the
+  repository password is missing. The menu bar icon shows "Not configured" with the
+  specific reason, and Settings marks the affected page and row.
+- Once configured, the first launch has no recorded backup, so one starts right away.
 - If your Mac was asleep through a scheduled backup, it runs once after waking, not
   once for every slot it missed.
 - `forget` (the retention/pruning step) is not scoped by host or tag, so it applies to
@@ -134,14 +85,15 @@ A few things worth knowing before you rely on this:
   backups from this Mac alone.
 - **Cancel Backup** stops restic cleanly and does not leave a stale lock or count as a
   failed run.
+- Adding a source path that needs extra access, such as Mail, Messages, or Photos,
+  triggers the macOS privacy dialog right away. If you deny it, Settings shows a
+  warning with a button to open **Privacy & Security → Full Disk Access**.
 
-## Other make targets
+## Restoring your data
 
-| Target | Action |
-| --- | --- |
-| `make build` / `make test` | Build or run the unit tests without installing. |
-| `make run` | Install and launch in one step. |
-| `make uninstall` | Removes the app. Leaves your config and keychain item in place. |
-| `make clean` | Removes build output. |
+Resticker has no restore UI (yet). Restoring is a plain restic command against your
+repository, see the [restic restore documentation](https://restic.readthedocs.io/en/stable/050_restore.html).
 
-See [Sign the app locally](#sign-the-app-locally) to set a stable `CODESIGN_IDENTITY`.
+## License
+
+MIT, see [LICENSE](LICENSE).

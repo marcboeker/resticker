@@ -52,17 +52,22 @@ enum ResticDate {
 
 /// Lists the newest snapshots off the main thread.
 public enum SnapshotLister {
-    public static func fetch(config: Config, password: String, limit: Int, completion: @escaping ([Snapshot]) -> Void) {
+    public static func fetch(
+        config: Config,
+        secrets: RepositorySecrets,
+        limit: Int,
+        completion: @escaping ([Snapshot]) -> Void
+    ) {
         DispatchQueue.global(qos: .utility).async {
-            let snapshots = run(config: config, password: password, limit: limit)
+            let snapshots = run(config: config, secrets: secrets, limit: limit)
             DispatchQueue.main.async { completion(snapshots) }
         }
     }
 
-    private static func run(config: Config, password: String, limit: Int) -> [Snapshot] {
+    private static func run(config: Config, secrets: RepositorySecrets, limit: Int) -> [Snapshot] {
         // `--latest` counts per host and path group, so it can return more than `limit`
         // rows. The list is cut to size again after decoding.
-        let process = ResticProcess.make(config: config, password: password,
+        let process = ResticProcess.make(config: config, secrets: secrets,
                                          arguments: ["snapshots", "--json", "--latest", String(limit)])
 
         let output = Pipe()

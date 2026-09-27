@@ -1,5 +1,4 @@
 import AppKit
-import ServiceManagement
 import UserNotifications
 import RestickerCore
 
@@ -9,26 +8,26 @@ enum IconState {
     case error
 }
 
-enum ToggleKey {
-    static let unlock = "unlockEnabled"
-    static let cleanup = "cleanupEnabled"
-    static let check = "checkEnabled"
-}
-
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var statusItem: NSStatusItem!
     let menu = NSMenu()
 
     var config = Config.default
-    private var configModified: Date?
     var state = RunState()
+
+    /// Created lazily so it captures `self` only once the app has finished setting up.
+    lazy var settingsWindowController = SettingsWindowController(appDelegate: self)
 
     var runner: BackupRunner?
     private var timer: Timer?
     private var activityToken: NSObjectProtocol?
 
     var snapshots: [Snapshot] = []
-    private var snapshotsLoading = false
+    private(set) var snapshotsLoading = false
+    /// Set between `menuWillOpen` and `menuDidClose`, so a snapshot refresh that finishes
+    /// while the menu is open can redraw it in place.
+    var isMenuOpen = false
 
     var iconState: IconState = .idle
     var statusLine = "Idle"
@@ -44,13 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        UserDefaults.standard.register(defaults: [
-            ToggleKey.unlock: true,
-            ToggleKey.cleanup: true,
-            ToggleKey.check: true,
-        ])
-
-        loadConfig(force: true)
+        config = ConfigStore.resolveResticIfNeeded()
         state = StateStore.load()
         // The icon state does not persist, so a relaunch must rebuild the error
         // indication from the recorded runs.
@@ -58,6 +51,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             iconState = .error
             statusLine = state.history.last?.detail ?? "Last backup failed"
         }
+
+        NSApp.mainMenu = MainMenu.make()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.imagePosition = .imageLeading
@@ -78,11 +73,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         )
 
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            self?.tick()
+            // Timer's closure type predates Swift concurrency and isn't itself
+            // @MainActor, but Timer always fires on the run loop it was scheduled on -
+            // the main one, here - so this really is already on the main actor.
+            MainActor.assumeIsolated { self?.tick() }
         }
         LogFile.shared.write("resticker started")
         tick()
         refreshSnapshots()
+
+        // First run, or a config that lost its restic/repository/password since the last
+        // launch: send the user straight to the page that explains why, instead of a menu
+        // that just says "Not configured".
+        let problems = readinessProblems()
+        if let firstProblemPage = SettingsPage.allCases.first(where: { page in problems.contains { $0.page == page } }) {
+            settingsWindowController.show(page: firstProblemPage)
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -97,24 +103,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Config
 
-    private func loadConfig(force: Bool) {
-        let modified = ConfigStore.modificationDate()
-        if !force, modified == configModified { return }
-        do {
-            config = try ConfigStore.load()
-            configModified = ConfigStore.modificationDate()
-        } catch {
-            LogFile.shared.write("config load failed: \(error.localizedDescription)")
-            statusLine = "Config error: \(error.localizedDescription)"
-            iconState = .error
-        }
-    }
-
     /// Reasons a backup cannot start right now. Empty means ready.
-    func readinessProblems() -> [String] {
+    func readinessProblems() -> [ConfigProblem] {
         var problems = config.problems()
         if !Keychain.hasPassword() {
-            problems.append("no password in keychain, set one via Set Repository Password… in the menu")
+            problems.append(.noPassword)
         }
         return problems
     }
@@ -122,7 +115,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Scheduling
 
     private func tick() {
-        loadConfig(force: false)
+        // Picks up anything Settings saved, and re-resolves restic if it moved or was
+        // installed since the last tick.
+        config = ConfigStore.resolveResticIfNeeded()
+        startRunIfDue()
+    }
+
+    /// Refreshes the idle/error status from the current `config`, then starts a backup if
+    /// one is due and nothing blocks it. Shared by `tick()` and `applyConfigChange`.
+    private func startRunIfDue() {
         guard runner == nil else { return }
         guard readinessProblems().isEmpty else {
             statusLine = "Not configured"
@@ -134,6 +135,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if Schedule.isRunDue(state: state, now: Date()) {
             startRun()
         }
+    }
+
+    /// Called by the Settings window after every save it makes, so an edit takes effect
+    /// right away instead of waiting for the next minute's timer tick. A backup already
+    /// running keeps using the config it started with; only the next run sees this one.
+    func applyConfigChange(_ newConfig: Config) {
+        ConfigStore.save(newConfig)
+        let intervalChanged = newConfig.backupIntervalMinutes != config.backupIntervalMinutes
+        let repositoryChanged = newConfig.repository != config.repository
+        config = newConfig
+        if intervalChanged {
+            state = Schedule.afterIntervalChange(state: state, config: config)
+            StateStore.save(state)
+        }
+        if repositoryChanged {
+            // The listed snapshots belong to the old repository.
+            snapshots = []
+            refreshSnapshots()
+        }
+        startRunIfDue()
     }
 
     @objc func backupNow(_ sender: Any?) {
@@ -148,25 +169,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func startRun() {
         guard runner == nil else { return }
+        config = ConfigStore.resolveResticIfNeeded()
         let problems = readinessProblems()
         guard problems.isEmpty else {
-            statusLine = "Not configured: \(problems.joined(separator: ", "))"
+            statusLine = "Not configured: \(problems.map(\.message).joined(separator: ", "))"
             iconState = .error
             updateStatusItem()
             return
         }
-        guard let password = Keychain.readPassword() else {
+        guard let secrets = Keychain.readSecrets() else {
             statusLine = "Keychain read failed"
             iconState = .error
             updateStatusItem()
             return
         }
 
-        let defaults = UserDefaults.standard
         let options = PipelineOptions(
-            unlock: defaults.bool(forKey: ToggleKey.unlock),
-            cleanup: defaults.bool(forKey: ToggleKey.cleanup),
-            check: defaults.bool(forKey: ToggleKey.check),
+            unlock: config.unlockEnabled,
+            cleanup: config.forgetEnabled,
+            check: config.checkEnabled,
             runMaintenance: Schedule.isCleanupDue(state: state, config: config, now: Date())
         )
 
@@ -178,7 +199,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         bytesRemaining = nil
         iconState = .running
         statusLine = "Starting…"
-        let backupRunner = BackupRunner(config: config, password: password, options: options) { [weak self] event in
+        let backupRunner = BackupRunner(
+            config: config,
+            secrets: secrets,
+            options: options
+        ) { [weak self] event in
             self?.handle(event)
         }
         runner = backupRunner
@@ -268,14 +293,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// shells out to restic; the menu keeps showing the previous list until this returns.
     /// Skipped while a backup holds the repository lock, since the run refreshes on finish.
     func refreshSnapshots() {
-        // A password that reads back proves the keychain half of readinessProblems().
+        // Secrets that read back prove the keychain half of readinessProblems().
         guard runner == nil, !snapshotsLoading, config.problems().isEmpty,
-              let password = Keychain.readPassword() else { return }
+              let secrets = Keychain.readSecrets() else { return }
         snapshotsLoading = true
-        SnapshotLister.fetch(config: config, password: password, limit: 5) { [weak self] snapshots in
+        rebuildMenuIfOpen()
+        SnapshotLister.fetch(config: config, secrets: secrets, limit: 5) { [weak self] snapshots in
             guard let self else { return }
             self.snapshotsLoading = false
             self.snapshots = snapshots
+            self.rebuildMenuIfOpen()
         }
     }
 
@@ -365,7 +392,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard animationTimer == nil else { return }
         animationStart = Date()
         animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-            self?.renderAnimatedFrame()
+            MainActor.assumeIsolated { self?.renderAnimatedFrame() }
         }
     }
 

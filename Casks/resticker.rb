@@ -16,5 +16,8 @@ cask "resticker" do
 
   app "Resticker.app"
 
-  zap trash: "~/.config/resticker"
+  zap trash: [
+    "~/Library/Application Support/Resticker",
+    "~/Library/Preferences/net.at6.resticker.plist",
+  ]
 end
