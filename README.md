@@ -15,21 +15,52 @@ in the menu.
 brew install restic
 ```
 
-Clone this repository, then build and install the app:
+Get the app one of two ways:
+
+### Option A: Download a release
+
+Grab the latest `Resticker-macos-arm64.zip` from the
+[Releases page](https://github.com/marcboeker/resticker/releases), unzip it, and move
+`Resticker.app` to `~/Applications`. Then open it:
 
 ```sh
-git clone <repository-url>
-cd resticker
-make install
-make set-password
 open ~/Applications/Resticker.app
 ```
 
-Run these in order. `make install` copies the app to `~/Applications`, and
-`make set-password` stores your repository password in the keychain, scoped to that
-installed app. If you skip ahead and run `make set-password` first, it has nothing to
-scope the keychain item to, and will fail. If you later re-sign the app with a
-different identity, remove the old keychain item first:
+The app is ad-hoc signed, so macOS Gatekeeper will refuse to open it with a normal
+double-click the first time. Either right-click the app and choose **Open**, or clear
+the quarantine flag yourself:
+
+```sh
+xattr -dr com.apple.quarantine ~/Applications/Resticker.app
+```
+
+### Option B: Build it yourself
+
+Clone this repository, then build and install the app:
+
+```sh
+git clone https://github.com/marcboeker/resticker.git
+cd resticker
+make install
+open ~/Applications/Resticker.app
+```
+
+`make install` builds the app and copies it to `~/Applications`.
+
+### Store your repository password
+
+Either way, once the app is installed, store your restic repository password in the
+keychain, scoped to that installed app:
+
+```sh
+make set-password
+```
+
+This must run after the app exists at `~/Applications/Resticker.app`, since the
+keychain access list is bound to that path. If you run it first, it has nothing to
+scope the keychain item to, and will fail. If you later re-sign or replace the app
+with a different identity, remove the old keychain item first:
 
 ```sh
 security delete-generic-password -s resticker -a repository-password
