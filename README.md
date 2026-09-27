@@ -51,7 +51,16 @@ brew install restic
 
 ```sh
 brew tap marcboeker/resticker https://github.com/marcboeker/resticker
+brew trust marcboeker/resticker
 brew install --cask resticker
+```
+
+The app is ad-hoc signed, so macOS Gatekeeper shows a warning the first time you open
+it: *"Apple could not verify 'Resticker.app'..."*. Either right-click
+the app and choose **Open**, or clear the quarantine flag yourself:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Resticker.app
 open /Applications/Resticker.app
 ```
 
