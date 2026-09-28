@@ -293,13 +293,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 state.append(RunRecord(date: now, outcome: .success, duration: outcome.duration,
                                        bytesAdded: state.lastBytesAdded, detail: detail))
                 notify(title: "Resticker: \(step.title) failed", body: outcome.message ?? "See the log for details.")
-            } else if let warning = outcome.warning {
-                let detail = "Backup incomplete: \(warning)"
-                statusLine = detail
-                iconState = .error
-                state.append(RunRecord(date: now, outcome: .success, duration: outcome.duration,
-                                       bytesAdded: state.lastBytesAdded, detail: detail))
-                notify(title: "Resticker: some files were not backed up", body: warning)
             } else {
                 statusLine = "Idle"
                 iconState = .idle
