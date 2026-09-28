@@ -20,9 +20,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     lazy var settingsWindowController = SettingsWindowController(appDelegate: self)
 
     var runner: BackupRunner?
-    /// The runner reports a cancel during maintenance as a success with no failed step,
-    /// so this is how `finish` knows the maintenance did not complete.
-    private var cancelRequested = false
     /// Set when the user denied the keychain dialog. Each scheduled run (and each snapshot
     /// refresh) would show that dialog again, so they wait until "Back up now" clears it.
     private var keychainDenied = false
@@ -181,7 +178,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func cancelBackup(_ sender: Any?) {
         guard let runner else { return }
         runner.cancel()
-        cancelRequested = true
         statusLine = "Cancelling…"
         updateStatusItem()
     }
@@ -261,8 +257,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             activityToken = nil
         }
         runner = nil
-        let wasCancelled = cancelRequested
-        cancelRequested = false
         bytesRemaining = nil
         let now = Date()
 
@@ -271,7 +265,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             state = Schedule.afterSuccess(state: state, config: config, now: now)
             state.lastBytesAdded = outcome.summary?.dataAddedPacked ?? 0
             state.lastDuration = outcome.duration
-            if outcome.maintenanceAttempted, !wasCancelled {
+            if outcome.maintenanceAttempted {
                 state = Schedule.afterMaintenance(state: state, failedStep: outcome.failedStep, now: now)
             }
             if let step = outcome.failedStep {

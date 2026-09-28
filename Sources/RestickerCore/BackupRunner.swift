@@ -39,6 +39,8 @@ public struct RunOutcome {
     /// Set when the backup wrote a snapshot but restic could not read some source files.
     public var warning: String?
     public var duration: TimeInterval
+    /// True when the maintenance steps ran to an end, passed or failed. False when they
+    /// were skipped or the user cancelled them.
     public var maintenanceAttempted: Bool
 }
 
@@ -155,6 +157,8 @@ public final class BackupRunner {
         }
 
         // The backup succeeded. Maintenance failures from here on never cause a backup retry.
+        // A cancel keeps the backup's success but reports the maintenance as not attempted,
+        // so it is not recorded as done.
         guard options.runMaintenance, options.cleanup || options.check else {
             return finish(.success, step: nil, message: nil, maintenance: false)
         }
@@ -162,7 +166,7 @@ public final class BackupRunner {
         if options.cleanup {
             emit(.stepStarted(.forget))
             let result = execute(.forget, arguments: config.forgetArgs)
-            if cancelled { return finish(.success, step: nil, message: nil, maintenance: true) }
+            if cancelled { return finish(.success, step: nil, message: nil, maintenance: false) }
             if result.status != 0 {
                 return finish(.success, step: .forget, message: result.lastError, maintenance: true)
             }
@@ -171,7 +175,7 @@ public final class BackupRunner {
         if options.check {
             emit(.stepStarted(.check))
             let result = execute(.check, arguments: config.resticCheckArgs)
-            if cancelled { return finish(.success, step: nil, message: nil, maintenance: true) }
+            if cancelled { return finish(.success, step: nil, message: nil, maintenance: false) }
             if result.status != 0 {
                 return finish(.success, step: .check, message: result.lastError, maintenance: true)
             }
