@@ -83,8 +83,17 @@ public struct Config: Equatable, Codable {
     /// The arguments passed to `restic forget`. A zero keep count means that rule is off
     /// and emits no flag; restic itself refuses to run with no keep policy and no
     /// extra args at all, which `problems()` reports as `.noRetentionPolicy`.
+    ///
+    /// restic groups snapshots by host and paths, so without `--host` this Mac's policy
+    /// would also forget other machines' snapshots in a shared repository. The host is the
+    /// one `restic backup` records: a `--host`/`-H` in the backup args, else the system
+    /// hostname. A `--host` in the extra forget args wins and nothing is added.
     public var forgetArgs: [String] {
         var args: [String] = []
+        if Config.hostFlagValue(in: resticForgetExtraArgs) == nil,
+           let host = Config.hostFlagValue(in: resticBackupArgs) ?? Config.systemHostname {
+            args += ["--host", host]
+        }
         if keepDaily > 0 { args += ["--keep-daily", String(keepDaily)] }
         if keepWeekly > 0 { args += ["--keep-weekly", String(keepWeekly)] }
         if keepMonthly > 0 { args += ["--keep-monthly", String(keepMonthly)] }
@@ -92,6 +101,32 @@ public struct Config: Equatable, Codable {
         if prune { args.append("--prune") }
         return args + resticForgetExtraArgs
     }
+
+    /// The value of a `--host X`, `--host=X`, `-H X` or `-H=X` flag, the forms restic's
+    /// flag parser accepts. The last one wins, as it does in restic.
+    static func hostFlagValue(in args: [String]) -> String? {
+        var found: String?
+        for (i, arg) in args.enumerated() {
+            if arg == "--host" || arg == "-H" {
+                if i + 1 < args.count { found = args[i + 1] }
+            } else if arg.hasPrefix("--host=") {
+                found = String(arg.dropFirst("--host=".count))
+            } else if arg.hasPrefix("-H=") {
+                found = String(arg.dropFirst("-H=".count))
+            }
+        }
+        return found
+    }
+
+    /// The name restic records when `--host` is not given: Go's `os.Hostname()`, which on
+    /// macOS reads `kern.hostname`, the same value `gethostname(3)` returns.
+    /// `ProcessInfo.hostName` can differ (it may resolve a network name), so it is not used.
+    static let systemHostname: String? = {
+        var buffer = [CChar](repeating: 0, count: Int(MAXHOSTNAMELEN) + 1)
+        guard gethostname(&buffer, buffer.count - 1) == 0 else { return nil }
+        let name = String(cString: buffer)
+        return name.isEmpty ? nil : name
+    }()
 
     /// Reasons the app cannot start a backup, one per affected setting so the Settings
     /// window can flag the right row. Keychain state (the password) is not checked here;

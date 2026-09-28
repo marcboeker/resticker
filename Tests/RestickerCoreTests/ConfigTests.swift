@@ -113,6 +113,7 @@ extension ConfigTests {
         config.prune = true
         config.resticForgetExtraArgs = []
         XCTAssertEqual(config.forgetArgs, [
+            "--host", Config.systemHostname!,
             "--keep-daily", "4",
             "--keep-weekly", "7",
             "--keep-monthly", "4",
@@ -128,7 +129,36 @@ extension ConfigTests {
         config.keepMonthly = 0
         config.keepYearly = 0
         config.prune = true
-        XCTAssertEqual(config.forgetArgs, ["--keep-weekly", "7", "--prune"])
+        XCTAssertEqual(config.forgetArgs, ["--host", Config.systemHostname!, "--keep-weekly", "7", "--prune"])
+    }
+
+    func testForgetArgsScopeToTheHostTheBackupRecords() {
+        var config = Config.default
+        XCTAssertEqual(Array(config.forgetArgs.prefix(2)), ["--host", Config.systemHostname!])
+
+        config.resticBackupArgs = ["--one-file-system", "--host", "studio"]
+        XCTAssertEqual(Array(config.forgetArgs.prefix(2)), ["--host", "studio"])
+
+        config.resticBackupArgs = ["-H=studio"]
+        XCTAssertEqual(Array(config.forgetArgs.prefix(2)), ["--host", "studio"])
+    }
+
+    func testForgetArgsAddNoHostWhenExtraArgsSetOne() {
+        var config = Config.default
+        config.resticForgetExtraArgs = ["--host=other"]
+        XCTAssertEqual(config.forgetArgs.filter { $0.hasPrefix("--host") }, ["--host=other"])
+    }
+
+    /// Must match what restic's Go `os.Hostname()` records, which is `kern.hostname`.
+    func testSystemHostnameMatchesTheHostnameCommand() throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/hostname")
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        try process.run()
+        process.waitUntilExit()
+        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        XCTAssertEqual(Config.systemHostname, output.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     func testForgetArgsOmitsPruneWhenOff() {
