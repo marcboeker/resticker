@@ -36,7 +36,35 @@ final class ResticMessageTests: XCTestCase {
         guard case .error(let text)? = ResticMessage.decode(line: line) else {
             return XCTFail("expected an error message")
         }
-        XCTAssertEqual(text, "permission denied (/Users/tester/secret)")
+        XCTAssertEqual(text, "/Users/tester/secret: permission denied")
+    }
+
+    func testErrorMessageThatAlreadyNamesThePathIsKept() {
+        let line = #"{"message_type":"error","error":{"message":"open /Users/tester/secret: permission denied"},"during":"archival","item":"/Users/tester/secret"}"#
+        XCTAssertEqual(ResticMessage.decode(line: line), .error("open /Users/tester/secret: permission denied"))
+    }
+
+    func testDecodesExitErrorAndKeepsTheFirstLine() {
+        let line = #"{"message_type":"exit_error","code":10,"message":"Fatal: repository does not exist: unable to open config file\nIs there a repository at the following location?\n/tmp/repo"}"#
+        XCTAssertEqual(ResticMessage.decode(line: line), .error("Fatal: repository does not exist: unable to open config file"))
+    }
+
+    // Lines as restic 0.19.1 writes them to stderr.
+    func testErrorTextFromStderrLines() {
+        XCTAssertEqual(
+            ResticMessage.errorText(stderrLine: #"{"message_type":"exit_error","code":12,"message":"Fatal: wrong password or no key found"}"#),
+            "Fatal: wrong password or no key found"
+        )
+        XCTAssertEqual(
+            ResticMessage.errorText(stderrLine: #"{"message_type":"error","error":{"message":"open /src/secret: permission denied"},"during":"archival","item":"/src/secret"}"#),
+            "open /src/secret: permission denied"
+        )
+        XCTAssertEqual(
+            ResticMessage.errorText(stderrLine: "/src/missing does not exist, skipping  "),
+            "/src/missing does not exist, skipping"
+        )
+        XCTAssertNil(ResticMessage.errorText(stderrLine: "   "))
+        XCTAssertNil(ResticMessage.errorText(stderrLine: #"{"message_type":"verbose_status","action":"unchanged"}"#))
     }
 
     func testIgnoresPlainTextAndUnknownTypes() {

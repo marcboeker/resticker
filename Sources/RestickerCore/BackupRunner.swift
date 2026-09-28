@@ -244,10 +244,9 @@ public final class BackupRunner {
 
         ioQueue.async(group: group) {
             readLines(from: errors.fileHandleForReading) { line in
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                if !trimmed.isEmpty {
+                if let text = ResticMessage.errorText(stderrLine: line) {
                     errorLock.lock()
-                    lastError = trimmed
+                    lastError = text
                     errorLock.unlock()
                 }
                 LogFile.shared.write("[\(step.rawValue)!] \(line)")

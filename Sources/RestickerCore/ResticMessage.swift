@@ -97,6 +97,11 @@ public enum ResticMessage: Equatable {
         }
     }
 
+    private struct ExitError: Decodable {
+        let code: Int?
+        let message: String?
+    }
+
     /// Returns nil for anything that is not a restic JSON message, which includes
     /// plain text warnings on stderr. Those go to the log untouched.
     public static func decode(line: String) -> ResticMessage? {
@@ -119,12 +124,29 @@ public enum ResticMessage: Equatable {
         case "error":
             guard let message = try? decoder.decode(ErrorMessage.self, from: data) else { return nil }
             let text = message.error?.message ?? "unknown error"
-            if let item = message.item, !item.isEmpty {
-                return .error("\(text) (\(item))")
+            // restic usually puts the path into the message already ("open /x: permission denied").
+            if let item = message.item, !item.isEmpty, !text.contains(item) {
+                return .error("\(item): \(text)")
             }
             return .error(text)
+        case "exit_error":
+            guard let message = try? decoder.decode(ExitError.self, from: data) else { return nil }
+            // Fatal messages can add hint lines. The first line carries the cause.
+            let text = message.message?.split(separator: "\n").first.map(String.init) ?? ""
+            return .error(text.isEmpty ? "restic exited with code \(message.code ?? -1)" : text)
         default:
             return nil
         }
+    }
+
+    /// Turns one stderr line into text for the user. With `--json`, restic writes `error`
+    /// and `exit_error` messages as JSON on stderr; other commands write plain text.
+    /// Returns nil for blank lines and for JSON that is not an error.
+    public static func errorText(stderrLine line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return nil }
+        if case .error(let text)? = decode(line: trimmed) { return text }
+        if trimmed.hasPrefix("{") { return nil }
+        return trimmed
     }
 }
