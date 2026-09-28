@@ -46,6 +46,17 @@ public enum Schedule {
         return now >= last.addingTimeInterval(config.maintenanceInterval)
     }
 
+    /// Records a maintenance pass unless its forget step failed. A failed forget left the
+    /// old snapshots in place, so cleanup stays due and the next backup tries again. A
+    /// failed check still counts: the repository needs a person, and repeating an
+    /// expensive check after every backup would only repeat the same notification.
+    public static func afterMaintenance(state: RunState, failedStep: PipelineStep?, now: Date) -> RunState {
+        guard failedStep != .forget else { return state }
+        var next = state
+        next.lastCleanupAt = now
+        return next
+    }
+
     /// Recomputes the next due date after `backupIntervalMinutes` changes in Settings, so
     /// a shorter interval takes effect right away instead of waiting for a due date that
     /// was set under the old one.

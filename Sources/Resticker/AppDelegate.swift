@@ -20,6 +20,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     lazy var settingsWindowController = SettingsWindowController(appDelegate: self)
 
     var runner: BackupRunner?
+    /// The runner reports a cancel during maintenance as a success with no failed step,
+    /// so this is how `finish` knows the maintenance did not complete.
+    private var cancelRequested = false
     private var timer: Timer?
     private var activityToken: NSObjectProtocol?
 
@@ -162,7 +165,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func cancelBackup(_ sender: Any?) {
-        runner?.cancel()
+        guard let runner else { return }
+        runner.cancel()
+        cancelRequested = true
         statusLine = "Cancelling…"
         updateStatusItem()
     }
@@ -237,6 +242,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             activityToken = nil
         }
         runner = nil
+        let wasCancelled = cancelRequested
+        cancelRequested = false
         bytesRemaining = nil
         let now = Date()
 
@@ -245,8 +252,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             state = Schedule.afterSuccess(state: state, config: config, now: now)
             state.lastBytesAdded = outcome.summary?.dataAddedPacked ?? 0
             state.lastDuration = outcome.duration
-            if outcome.maintenanceAttempted {
-                state.lastCleanupAt = now
+            if outcome.maintenanceAttempted, !wasCancelled {
+                state = Schedule.afterMaintenance(state: state, failedStep: outcome.failedStep, now: now)
             }
             if let step = outcome.failedStep {
                 let detail = "\(step.title) failed: \(outcome.message ?? "unknown error")"

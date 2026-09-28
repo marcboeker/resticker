@@ -81,6 +81,17 @@ final class ScheduleTests: XCTestCase {
         XCTAssertTrue(Schedule.isCleanupDue(state: state, config: value, now: now))
     }
 
+    func testFailedForgetKeepsCleanupDue() {
+        let state = Schedule.afterMaintenance(state: RunState(), failedStep: .forget, now: now)
+        XCTAssertNil(state.lastCleanupAt)
+        XCTAssertTrue(Schedule.isCleanupDue(state: state, config: config, now: now.addingTimeInterval(4 * 3600)))
+    }
+
+    func testCompletedOrCheckFailedMaintenanceIsRecorded() {
+        XCTAssertEqual(Schedule.afterMaintenance(state: RunState(), failedStep: nil, now: now).lastCleanupAt, now)
+        XCTAssertEqual(Schedule.afterMaintenance(state: RunState(), failedStep: .check, now: now).lastCleanupAt, now)
+    }
+
     func testAfterIntervalChangeLeavesAPendingRetryUntouched() {
         var state = RunState()
         state = Schedule.afterFailure(state: state, config: config, now: now)
