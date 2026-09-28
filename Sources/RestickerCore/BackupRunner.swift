@@ -204,19 +204,18 @@ public final class BackupRunner {
         process.standardOutput = output
         process.standardError = errors
 
+        // Starting the process under the lock means `cancel()` either sees the cancel flag
+        // here first or finds the process already running; it can never miss it.
         lock.lock()
         if isCancelled {
             lock.unlock()
             return ExecutionResult(status: -1, lastError: "cancelled")
         }
-        currentProcess = process
-        lock.unlock()
-
         do {
             try process.run()
+            currentProcess = process
+            lock.unlock()
         } catch {
-            lock.lock()
-            currentProcess = nil
             lock.unlock()
             LogFile.shared.write("\(step.rawValue) could not start: \(error.localizedDescription)")
             return ExecutionResult(status: -1, lastError: error.localizedDescription)
