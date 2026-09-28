@@ -4,7 +4,7 @@
   <img src="docs/app-icon.png" alt="Resticker app icon" width="128">
 </p>
 
-*Chuck Norris does not use Resticker. His files are too afraid to get lost.* For
+_Chuck Norris does not use Resticker. His files are too afraid to get lost._ For
 everyone else, Resticker is a macOS menu bar app that runs [restic](https://restic.net)
 backups on a schedule. It backs up in the background, catches up after your Mac wakes
 from sleep, and shows the last backup time, how much data moved, and your recent
@@ -51,13 +51,14 @@ brew install restic
 
 ```sh
 brew tap marcboeker/resticker https://github.com/marcboeker/resticker
-brew trust marcboeker/resticker
+brew trust --cask marcboeker/resticker/resticker
 brew install --cask resticker
 ```
 
-The app is ad-hoc signed, so macOS Gatekeeper shows a warning the first time you open
-it: *"Apple could not verify 'Resticker.app'..."*. Either right-click
-the app and choose **Open**, or clear the quarantine flag yourself:
+The app is ad-hoc signed, so macOS Gatekeeper blocks it the first time you open it:
+_"Apple could not verify 'Resticker.app'..."_. Click **Done**, then open **System
+Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to the
+Resticker message.
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Resticker.app

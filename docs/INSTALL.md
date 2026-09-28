@@ -15,8 +15,10 @@ open ~/Applications/Resticker.app
 ```
 
 The app is ad-hoc signed, so macOS Gatekeeper will refuse to open it with a normal
-double-click the first time. Either right-click the app and choose **Open**, or clear
-the quarantine flag yourself:
+double-click the first time. Click **Done**, then open **System Settings → Privacy &
+Security**, scroll down, and click **Open Anyway** next to the Resticker message. On
+macOS 14, right-clicking the app and choosing **Open** also works. Or clear the
+quarantine flag yourself:
 
 ```sh
 xattr -dr com.apple.quarantine ~/Applications/Resticker.app
