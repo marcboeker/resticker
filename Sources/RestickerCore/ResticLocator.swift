@@ -32,15 +32,18 @@ public enum ResticLocator {
     /// a login shell with a heavy profile can take seconds to start.
     @usableFromInline static let loginShellPath = readLoginShellPath()
 
-    /// Runs `$SHELL -l -c 'echo $PATH'` to read PATH the way Terminal sees it, with login
-    /// profile scripts applied. A short timeout keeps a misbehaving shell from hanging
-    /// app launch; either way that failure just falls back to "restic not found".
+    /// Runs `$SHELL -l -c '/usr/bin/printenv PATH'` to read PATH the way Terminal sees it,
+    /// with login profile scripts applied. `printenv` prints the exported, colon-separated
+    /// value in every shell; `echo $PATH` does not, because fish keeps PATH as a list and
+    /// prints it with spaces. The absolute path works even when the profile breaks PATH.
+    /// A short timeout keeps a misbehaving shell from hanging app launch; either way that
+    /// failure just falls back to "restic not found".
     private static func readLoginShellPath() -> String? {
         guard let shell = ProcessInfo.processInfo.environment["SHELL"], !shell.isEmpty else { return nil }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: shell)
-        process.arguments = ["-l", "-c", "echo $PATH"]
+        process.arguments = ["-l", "-c", "/usr/bin/printenv PATH"]
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
@@ -65,7 +68,7 @@ public enum ResticLocator {
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         guard let output = String(data: data, encoding: .utf8) else { return nil }
         // A login profile can print its own text (a greeting, a tool's notice) before the
-        // `echo`, so only the last non-empty line is PATH.
+        // `printenv`, so only the last non-empty line is PATH.
         let lastLine = output
             .split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
