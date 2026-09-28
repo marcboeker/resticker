@@ -36,6 +36,8 @@ public struct RunOutcome {
     public var summary: BackupSummary?
     public var failedStep: PipelineStep?
     public var message: String?
+    /// Set when the backup wrote a snapshot but restic could not read some source files.
+    public var warning: String?
     public var duration: TimeInterval
     public var maintenanceAttempted: Bool
 }
@@ -102,6 +104,7 @@ public final class BackupRunner {
     private func runPipeline() {
         let began = Date()
         var summary: BackupSummary?
+        var warning: String?
 
         func finish(_ outcome: RunRecord.Outcome, step: PipelineStep?, message: String?, maintenance: Bool) {
             let result = RunOutcome(
@@ -109,6 +112,7 @@ public final class BackupRunner {
                 summary: summary,
                 failedStep: step,
                 message: message,
+                warning: warning,
                 duration: Date().timeIntervalSince(began),
                 maintenanceAttempted: maintenance
             )
@@ -143,8 +147,11 @@ public final class BackupRunner {
         }
 
         if cancelled { return finish(.cancelled, step: nil, message: nil, maintenance: false) }
-        if backup.status != 0 {
+        if !BackupRunner.snapshotWritten(backupStatus: backup.status) {
             return finish(.failure, step: .backup, message: backup.lastError, maintenance: false)
+        }
+        if backup.status != 0 {
+            warning = backup.lastError ?? "some source files could not be read"
         }
 
         // The backup succeeded. Maintenance failures from here on never cause a backup retry.
@@ -171,6 +178,12 @@ public final class BackupRunner {
         }
 
         finish(.success, step: nil, message: nil, maintenance: true)
+    }
+
+    /// restic exits 3 when it wrote the snapshot but could not read some source files,
+    /// for example files that macOS privacy protection blocks. That snapshot is kept.
+    static func snapshotWritten(backupStatus status: Int32) -> Bool {
+        status == 0 || status == 3
     }
 
     // MARK: - Process handling

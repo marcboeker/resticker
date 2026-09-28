@@ -70,8 +70,8 @@ public struct RunState: Codable, Equatable {
         }
     }
 
-    /// True when the most recent run failed: either the whole run, or a successful
-    /// backup whose unlock, cleanup, or check step failed.
+    /// True when the most recent run failed: either the whole run, a successful backup
+    /// whose unlock, cleanup, or check step failed, or a backup that skipped unreadable files.
     public var lastRunFailed: Bool {
         guard let last = history.last else { return false }
         return last.outcome == .failure || (last.outcome == .success && last.detail != nil)
