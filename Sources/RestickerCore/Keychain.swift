@@ -39,11 +39,18 @@ public enum Keychain {
         return SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess
     }
 
-    /// Nil when no password is stored; the environment is empty when none is stored.
+    /// Nil when no password is stored or it cannot be read; the environment is empty when
+    /// none is stored.
     public static func readSecrets() -> RepositorySecrets? {
-        guard let data = readData(account: passwordAccount),
-              let password = String(data: data, encoding: .utf8) else { return nil }
-        return RepositorySecrets(password: password, environment: readEnvironment())
+        try? readSecretsResult().get()
+    }
+
+    /// Like `readSecrets()`, but tells a denied keychain dialog apart from other failures.
+    public static func readSecretsResult() -> Result<RepositorySecrets, KeychainReadError> {
+        readData(account: passwordAccount).flatMap { data in
+            guard let password = String(data: data, encoding: .utf8) else { return .failure(.failed(errSecDecode)) }
+            return .success(RepositorySecrets(password: password, environment: readEnvironment()))
+        }
     }
 
     /// Creates or updates the generic password item. Because the app itself performs this
@@ -58,7 +65,7 @@ public enum Keychain {
     /// A missing item is the common case (nothing configured yet), not an error, so it
     /// returns an empty dictionary instead of logging.
     public static func readEnvironment() -> [String: String] {
-        guard let data = readData(account: environmentAccount) else { return [:] }
+        guard case .success(let data) = readData(account: environmentAccount) else { return [:] }
         return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
     }
 
@@ -68,7 +75,7 @@ public enum Keychain {
         return save(data, account: environmentAccount)
     }
 
-    private static func readData(account: String) -> Data? {
+    private static func readData(account: String) -> Result<Data, KeychainReadError> {
         var query = baseQuery(account: account)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -78,9 +85,9 @@ public enum Keychain {
             if status != errSecItemNotFound {
                 LogFile.shared.write("keychain read failed for \(account) with status \(status)")
             }
-            return nil
+            return .failure(KeychainReadError(status: status))
         }
-        return data
+        return .success(data)
     }
 
     @discardableResult
@@ -95,5 +102,23 @@ public enum Keychain {
             LogFile.shared.write("keychain save failed for \(account) with status \(status)")
         }
         return status == errSecSuccess
+    }
+}
+
+public enum KeychainReadError: Error, Equatable {
+    case notFound
+    /// The user clicked Deny (or cancelled) in the macOS keychain access dialog. Ad-hoc
+    /// signed builds see that dialog again after each update.
+    case denied
+    case failed(OSStatus)
+
+    init(status: OSStatus) {
+        switch status {
+        case errSecItemNotFound: self = .notFound
+        // Deny in the access dialog gives errSecAuthFailed; closing the password
+        // dialog gives errSecUserCanceled.
+        case errSecAuthFailed, errSecUserCanceled: self = .denied
+        default: self = .failed(status)
+        }
     }
 }

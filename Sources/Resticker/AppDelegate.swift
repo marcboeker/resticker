@@ -23,6 +23,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The runner reports a cancel during maintenance as a success with no failed step,
     /// so this is how `finish` knows the maintenance did not complete.
     private var cancelRequested = false
+    /// Set when the user denied the keychain dialog. Each scheduled run (and each snapshot
+    /// refresh) would show that dialog again, so they wait until "Back up now" clears it.
+    private var keychainDenied = false
     private var timer: Timer?
     private var activityToken: NSObjectProtocol?
 
@@ -135,6 +138,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             updateStatusItem()
             return
         }
+        guard !keychainDenied else {
+            statusLine = Self.keychainDeniedStatus
+            iconState = .error
+            updateStatusItem()
+            return
+        }
         updateStatusItem()
         if Schedule.isRunDue(state: state, now: Date()) {
             startRun()
@@ -162,8 +171,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func backupNow(_ sender: Any?) {
+        // The user asked, so showing the keychain dialog again is fine.
+        keychainDenied = false
         startRun()
     }
+
+    private static let keychainDeniedStatus = "Keychain access denied — click Back up now to retry"
 
     @objc func cancelBackup(_ sender: Any?) {
         guard let runner else { return }
@@ -183,8 +196,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             updateStatusItem()
             return
         }
-        guard let secrets = Keychain.readSecrets() else {
-            statusLine = "Keychain read failed"
+        let secrets: RepositorySecrets
+        switch Keychain.readSecretsResult() {
+        case .success(let value):
+            secrets = value
+        case .failure(let error):
+            keychainDenied = error == .denied
+            statusLine = keychainDenied ? Self.keychainDeniedStatus : "Keychain read failed"
             iconState = .error
             updateStatusItem()
             return
@@ -315,8 +333,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
         // Secrets that read back prove the keychain half of readinessProblems().
-        guard runner == nil, config.problems().isEmpty,
-              let secrets = Keychain.readSecrets() else { return }
+        guard runner == nil, !keychainDenied, config.problems().isEmpty else { return }
+        let secrets: RepositorySecrets
+        switch Keychain.readSecretsResult() {
+        case .success(let value):
+            secrets = value
+        case .failure(let error):
+            keychainDenied = error == .denied
+            return
+        }
         snapshotsLoading = true
         rebuildMenuIfOpen()
         let repository = config.repository
