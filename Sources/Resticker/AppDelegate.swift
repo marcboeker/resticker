@@ -411,7 +411,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// True when the last successful backup finished less than 24 hours ago.
-    private var isBackupRecent: Bool {
+    var isBackupRecent: Bool {
         guard let lastSuccessAt = state.lastSuccessAt else { return false }
         return Date().timeIntervalSince(lastSuccessAt) < 24 * 60 * 60
     }

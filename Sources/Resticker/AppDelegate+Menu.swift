@@ -20,24 +20,31 @@ extension AppDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        menu.addItem(header("Resticker (\(appVersion))"))
+        menu.addItem(row(
+            MenuText.title("Resticker"),
+            MenuText.code(appVersion),
+            height: 30
+        ))
         menu.addItem(.separator())
 
         let problems = readinessProblems()
         if !problems.isEmpty {
             for problem in problems {
-                menu.addItem(info("Not configured: \(problem.message)"))
+                menu.addItem(row(MenuText.warning("Not configured: \(problem.message)"), NSAttributedString()))
             }
             menu.addItem(.separator())
         }
 
-        menu.addItem(detail("Last backup", Formatting.timestamp(state.lastSuccessAt)))
+        menu.addItem(detail("Status", MenuText.value(statusLine, tone: statusTone)))
+        menu.addItem(detail("Last backup", timestampValue(state.lastSuccessAt, tone: lastBackupTone)))
         if state.lastSuccessAt != nil {
-            menu.addItem(detail("Transferred", "\(Formatting.bytes(state.lastBytesAdded)) in \(Formatting.duration(state.lastDuration))"))
+            let transferred = MenuText.value(Formatting.bytes(state.lastBytesAdded))
+            transferred.append(MenuText.label(" in "))
+            transferred.append(MenuText.value(Formatting.duration(state.lastDuration)))
+            menu.addItem(detail("Transferred", transferred))
         }
-        menu.addItem(detail("Last cleanup", Formatting.timestamp(state.lastCleanupAt)))
-        menu.addItem(detail("Next run", Formatting.timestamp(state.nextDueAt)))
-        menu.addItem(detail("Status", statusLine))
+        menu.addItem(detail("Last cleanup", timestampValue(state.lastCleanupAt)))
+        menu.addItem(detail("Next run", timestampValue(state.nextDueAt)))
         menu.addItem(.separator())
 
         let snapshotsHeader = NSMenuItem()
@@ -49,7 +56,7 @@ extension AppDelegate {
         )
         menu.addItem(snapshotsHeader)
         if snapshots.isEmpty {
-            menu.addItem(info("none yet"))
+            menu.addItem(row(MenuText.muted("None yet"), NSAttributedString()))
         } else {
             for snapshot in snapshots {
                 menu.addItem(snapshotItem(snapshot))
@@ -82,39 +89,47 @@ extension AppDelegate {
         menu.addItem(quit)
     }
 
-    /// A status row: the label on the left, the value at the menu's right edge.
-    private func detail(_ label: String, _ value: String) -> NSMenuItem {
+    /// A status row: the dim label on the left, the bright value at the menu's right edge.
+    private func detail(_ label: String, _ value: NSAttributedString) -> NSMenuItem {
+        row(MenuText.label(label), value)
+    }
+
+    private func row(_ label: NSAttributedString, _ value: NSAttributedString, height: CGFloat = 24) -> NSMenuItem {
         let item = NSMenuItem()
-        item.view = DetailRowView(label: label, value: value)
+        item.view = DetailRowView(label: label, value: value, height: height)
         return item
+    }
+
+    /// "never" is the absence of a value, so it recedes instead of reading like one.
+    private func timestampValue(_ date: Date?, tone: Tone? = nil) -> NSAttributedString {
+        guard date != nil else { return MenuText.muted(Formatting.timestamp(nil), tone: tone) }
+        return MenuText.value(Formatting.timestamp(date), tone: tone)
+    }
+
+    private var statusTone: Tone {
+        switch iconState {
+        case .idle: .good
+        case .running: .busy
+        case .error: .bad
+        }
+    }
+
+    /// Green within the day that the menu bar icon shows its check mark for, orange after it.
+    private var lastBackupTone: Tone {
+        if state.lastSuccessAt == nil { return .bad }
+        return isBackupRecent ? .good : .warning
     }
 
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "main"
     }
 
-    private func header(_ title: String) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        return item
-    }
-
-    private func info(_ title: String) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        item.attributedTitle = NSAttributedString(
-            string: title,
-            attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)]
-        )
-        return item
-    }
-
-    /// A snapshot row: the date in bold on the left, the size and the ID at the right edge.
+    /// A snapshot row: the date in semibold on the left; at the right edge the size, then
+    /// the ID in a faint monospaced font, so the column of IDs lines up and stays quiet.
     private func snapshotItem(_ snapshot: Snapshot) -> NSMenuItem {
-        let size = snapshot.totalSize.map(Formatting.bytes) ?? "—"
-        let item = NSMenuItem()
-        item.view = DetailRowView(label: Formatting.timestamp(snapshot.time), value: "\(size)  (\(snapshot.shortId))", boldLabel: true)
-        return item
+        let size = MenuText.value(snapshot.totalSize.map(Formatting.bytes) ?? "—")
+        size.append(MenuText.code("  \(snapshot.shortId)"))
+        return row(MenuText.value(Formatting.timestamp(snapshot.time), weight: .semibold), size)
     }
 
     @objc func reloadSnapshots(_ sender: Any?) {
@@ -145,9 +160,7 @@ private final class SnapshotsHeaderView: NSView {
         // The menu stretches the view to its own width.
         autoresizingMask = [.width]
 
-        let label = NSTextField(labelWithString: "Recent snapshots:")
-        label.font = .menuFont(ofSize: 0)
-        label.textColor = .disabledControlTextColor
+        let label = NSTextField.singleLineLabel(MenuText.section("Recent snapshots"))
 
         let trailing: NSView
         if loading {
@@ -191,21 +204,18 @@ private final class SnapshotsHeaderView: NSView {
 /// stops short of the menu's right edge, because the menu keeps room there for the key
 /// equivalents of other items.
 private final class DetailRowView: NSView {
-    init(label: String, value: String, boldLabel: Bool = false) {
-        let labelField = NSTextField(labelWithString: label)
-        labelField.font = .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: boldLabel ? .bold : .regular)
-        let valueField = NSTextField(labelWithString: value)
-        valueField.font = .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+    init(label: NSAttributedString, value: NSAttributedString, height: CGFloat) {
+        let labelField = NSTextField.singleLineLabel(label)
+        let valueField = NSTextField.singleLineLabel(value)
 
         let inset: CGFloat = 14
         let gap: CGFloat = 24
         let width = inset + labelField.fittingSize.width + gap + valueField.fittingSize.width + inset
-        super.init(frame: NSRect(x: 0, y: 0, width: ceil(width), height: 24))
+        super.init(frame: NSRect(x: 0, y: 0, width: ceil(width), height: height))
         // The menu stretches the view to its own width.
         autoresizingMask = [.width]
 
         for field in [labelField, valueField] {
-            field.textColor = .secondaryLabelColor
             field.translatesAutoresizingMaskIntoConstraints = false
             addSubview(field)
         }
@@ -220,5 +230,105 @@ private final class DetailRowView: NSView {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
+    }
+}
+
+private extension NSTextField {
+    /// `NSTextField(labelWithAttributedString:)` makes a wrapping label, but the menu rows
+    /// are one line high. A plain label does not wrap.
+    static func singleLineLabel(_ text: NSAttributedString) -> NSTextField {
+        let field = NSTextField(labelWithString: "")
+        field.attributedStringValue = text
+        return field
+    }
+}
+
+/// How a menu value should read at a glance, shown as a colored dot before it.
+enum Tone {
+    case good
+    case busy
+    case warning
+    case bad
+
+    var color: NSColor {
+        switch self {
+        case .good: .systemGreen
+        case .busy: .controlAccentColor
+        case .warning: .systemOrange
+        case .bad: .systemRed
+        }
+    }
+}
+
+/// The menu's type scale. Contrast carries the hierarchy: labels are dim, values are
+/// bright, and the values that need no reading (absent dates, snapshot IDs) are faint.
+private enum MenuText {
+    static let size: CGFloat = 12
+
+    static func title(_ text: String) -> NSAttributedString {
+        NSAttributedString(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .bold),
+            .foregroundColor: NSColor.labelColor,
+        ])
+    }
+
+    /// Small caps with wide letter spacing, like a sidebar section heading.
+    static func section(_ text: String) -> NSAttributedString {
+        NSAttributedString(string: text.uppercased(), attributes: [
+            .font: NSFont.systemFont(ofSize: 10, weight: .semibold),
+            .foregroundColor: NSColor.secondaryLabelColor,
+            .kern: 0.8,
+        ])
+    }
+
+    static func label(_ text: String) -> NSMutableAttributedString {
+        NSMutableAttributedString(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: size),
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ])
+    }
+
+    /// A bright value with tabular digits. A tone puts a colored dot before it; a bad tone
+    /// also colors the text, because an error must not look like a normal value.
+    static func value(_ text: String, weight: NSFont.Weight = .medium, tone: Tone? = nil) -> NSMutableAttributedString {
+        let color: NSColor = tone == .bad ? .systemRed : .labelColor
+        let result = dot(tone)
+        result.append(NSAttributedString(string: text, attributes: [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight),
+            .foregroundColor: color,
+        ]))
+        return result
+    }
+
+    static func muted(_ text: String, tone: Tone? = nil) -> NSMutableAttributedString {
+        let result = dot(tone)
+        result.append(NSAttributedString(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: size),
+            .foregroundColor: NSColor.tertiaryLabelColor,
+        ]))
+        return result
+    }
+
+    static func code(_ text: String) -> NSMutableAttributedString {
+        NSMutableAttributedString(string: text, attributes: [
+            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
+            .foregroundColor: NSColor.tertiaryLabelColor,
+        ])
+    }
+
+    static func warning(_ text: String) -> NSMutableAttributedString {
+        NSMutableAttributedString(string: "⚠︎ \(text)", attributes: [
+            .font: NSFont.systemFont(ofSize: size, weight: .medium),
+            .foregroundColor: NSColor.systemOrange,
+        ])
+    }
+
+    private static func dot(_ tone: Tone?) -> NSMutableAttributedString {
+        guard let tone else { return NSMutableAttributedString() }
+        return NSMutableAttributedString(string: "●  ", attributes: [
+            .font: NSFont.systemFont(ofSize: 8),
+            .foregroundColor: tone.color,
+            .baselineOffset: 1.5,
+        ])
     }
 }
