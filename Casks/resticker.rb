@@ -24,6 +24,14 @@ cask "resticker" do
 
   app "Resticker.app"
 
+  postflight_steps do
+    run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{appdir}}/Resticker.app"]
+  end
+
+  # Quit the running app before Homebrew replaces the bundle on upgrade/uninstall — otherwise
+  # the update clobbers a live process.
+  uninstall quit: "net.at6.resticker"
+
   zap trash: [
     "~/Library/Application Support/Resticker",
     "~/Library/Preferences/net.at6.resticker.plist",
