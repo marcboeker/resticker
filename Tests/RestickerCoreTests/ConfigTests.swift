@@ -85,6 +85,20 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(config.keepDaily, Config.default.keepDaily)
         XCTAssertEqual(config.repository, "sftp:nas:/backups")
     }
+
+    /// A value too large for the interval math loads clamped instead of crashing later.
+    func testOutOfRangeDurationsLoadClamped() {
+        let defaults = makeDefaults()
+        defaults.set(Int.max, forKey: "backupIntervalMinutes")
+        defaults.set(Int.max, forKey: "maintenanceIntervalHours")
+        defaults.set(-5, forKey: "retryDelayMinutes")
+        let config = ConfigStore.load(from: defaults)
+        XCTAssertEqual(config.backupIntervalMinutes, 525_600)
+        XCTAssertEqual(config.maintenanceIntervalHours, 8_760)
+        XCTAssertEqual(config.retryDelayMinutes, 0)
+        XCTAssertEqual(config.interval, 525_600 * 60)
+        XCTAssertEqual(config.maintenanceInterval, 8_760 * 3600)
+    }
 }
 
 // MARK: - forgetArgs

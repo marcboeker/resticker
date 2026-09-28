@@ -67,6 +67,11 @@ public struct Config: Equatable, Codable {
         case checkEnabled
     }
 
+    /// The longest interval any duration setting accepts: one year. Longer than anyone
+    /// would wait between backups, and far below where `* 60` or `* 3600` could overflow
+    /// `Int`. The Settings window clamps input to it, and `init(from:)` clamps stored values.
+    public static let maxDurationMinutes = 365 * 24 * 60
+
     public var interval: TimeInterval { TimeInterval(max(1, backupIntervalMinutes) * 60) }
     public var maintenanceInterval: TimeInterval { TimeInterval(max(0, maintenanceIntervalHours) * 3600) }
     public var retryDelay: TimeInterval { TimeInterval(max(1, retryDelayMinutes) * 60) }
@@ -139,22 +144,27 @@ public enum ConfigProblem: Equatable {
 
 extension Config {
     /// A key that is missing, or holds a value of the wrong type, loads the default, so
-    /// one bad value never resets the whole config. Built on the memberwise init, so a new
-    /// field that is not read here does not compile.
+    /// one bad value never resets the whole config. Durations are clamped to
+    /// 0...`maxDurationMinutes`, so a huge stored value cannot overflow the interval math.
+    /// Built on the memberwise init, so a new field that is not read here does not compile.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let d = Config.default
         func value<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
             (try? container.decodeIfPresent(T.self, forKey: key)) ?? fallback
         }
+        func duration(_ key: CodingKeys, _ fallback: Int, max upper: Int) -> Int {
+            min(max(value(key, fallback), 0), upper)
+        }
         self.init(
             resticBinaryPath: value(.resticBinaryPath, d.resticBinaryPath),
             repository: value(.repository, d.repository),
             sourcePaths: value(.sourcePaths, d.sourcePaths),
             excludeFile: value(.excludeFile, d.excludeFile),
-            backupIntervalMinutes: value(.backupIntervalMinutes, d.backupIntervalMinutes),
-            maintenanceIntervalHours: value(.maintenanceIntervalHours, d.maintenanceIntervalHours),
-            retryDelayMinutes: value(.retryDelayMinutes, d.retryDelayMinutes),
+            backupIntervalMinutes: duration(.backupIntervalMinutes, d.backupIntervalMinutes, max: Config.maxDurationMinutes),
+            maintenanceIntervalHours: duration(.maintenanceIntervalHours, d.maintenanceIntervalHours,
+                                               max: Config.maxDurationMinutes / 60),
+            retryDelayMinutes: duration(.retryDelayMinutes, d.retryDelayMinutes, max: Config.maxDurationMinutes),
             maxRetries: value(.maxRetries, d.maxRetries),
             notifyOnSuccessfulBackup: value(.notifyOnSuccessfulBackup, d.notifyOnSuccessfulBackup),
             resticGlobalArgs: value(.resticGlobalArgs, d.resticGlobalArgs),

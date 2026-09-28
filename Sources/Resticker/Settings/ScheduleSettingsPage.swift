@@ -81,7 +81,10 @@ struct DurationField: View {
 
     private func commitAmount() {
         guard let amount = Int(amountText), amount > 0 else { sync(); return }
-        commit(amount * unit.minutesPerUnit)
+        // Capping the amount before multiplying keeps a huge entry from overflowing `Int`.
+        let capped = min(amount, Config.maxDurationMinutes / unit.minutesPerUnit)
+        if capped != amount { amountText = String(capped) }
+        commit(capped * unit.minutesPerUnit)
     }
 }
 
