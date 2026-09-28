@@ -32,11 +32,9 @@ jobs:
           zip -ry ../Resticker-macos-amd64.zip Resticker.app
 
       - name: Generate release notes
-        id: notes
         run: |
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
           {
-            echo "notes<<EOF"
             echo "## Changes"
             echo
             if [ -n "$PREVIOUS_TAG" ]; then
@@ -45,8 +43,7 @@ jobs:
               git log "${GITHUB_REF_NAME}" --pretty=format:"- %s (%h)"
             fi
             echo
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+          } > "${RUNNER_TEMP}/release-notes.md"
 
       - name: Create release
         env:
@@ -56,7 +53,7 @@ jobs:
             dist/Resticker-macos-arm64.zip \
             dist/Resticker-macos-amd64.zip \
             --title "${GITHUB_REF_NAME}" \
-            --notes "${{ steps.notes.outputs.notes }}"
+            --notes-file "${RUNNER_TEMP}/release-notes.md"
 
       - name: Update Homebrew cask
         run: |
