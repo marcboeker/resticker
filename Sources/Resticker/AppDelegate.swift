@@ -21,7 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     var runner: BackupRunner?
     /// Set when the user denied the keychain dialog. Each scheduled run (and each snapshot
-    /// refresh) would show that dialog again, so they wait until "Back up now" clears it.
+    /// refresh) would show that dialog again, so they wait until "Back up now" or a
+    /// password saved in Settings clears it.
     private var keychainDenied = false
     private var timer: Timer?
     private var activityToken: NSObjectProtocol?
@@ -51,10 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         state = StateStore.load()
         // The icon state does not persist, so a relaunch must rebuild the error
         // indication from the recorded runs.
-        if state.lastRunFailed {
-            iconState = .error
-            statusLine = state.history.last?.detail ?? "Last backup failed"
-        }
+        restoreStatusFromHistory()
 
         NSApp.mainMenu = MainMenu.make()
 
@@ -174,6 +172,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private static let keychainDeniedStatus = "Keychain access denied — click Back up now to retry"
+
+    /// Called by the Settings window after it saved a new repository password. The app
+    /// wrote that item itself, so reading it back does not show the dialog the user denied.
+    func passwordSaved() {
+        guard keychainDenied else { return }
+        keychainDenied = false
+        restoreStatusFromHistory()
+        startRunIfDue()
+    }
+
+    /// Shows the last recorded run's error, or idle when it passed.
+    private func restoreStatusFromHistory() {
+        if state.lastRunFailed {
+            iconState = .error
+            statusLine = state.history.last?.detail ?? "Last backup failed"
+        } else {
+            iconState = .idle
+            statusLine = "Idle"
+        }
+    }
 
     @objc func cancelBackup(_ sender: Any?) {
         guard let runner else { return }

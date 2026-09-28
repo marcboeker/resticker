@@ -164,6 +164,7 @@ final class SettingsWindowController: NSWindowController {
                     LogFile.shared.write("repository password set via Settings")
                     self.model.hasPassword = true
                     self.recomputeProblems()
+                    self.appDelegate.passwordSaved()
                     self.appDelegate.refreshSnapshots()
                 } else {
                     let alert = NSAlert()
