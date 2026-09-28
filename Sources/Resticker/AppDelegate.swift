@@ -28,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     var snapshots: [Snapshot] = []
     private(set) var snapshotsLoading = false
+    private var snapshotsRefreshPending = false
     /// Set between `menuWillOpen` and `menuDidClose`, so a snapshot refresh that finishes
     /// while the menu is open can redraw it in place.
     var isMenuOpen = false
@@ -306,17 +307,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Refreshes the snapshot list shown in the menu. Runs off the main thread since it
     /// shells out to restic; the menu keeps showing the previous list until this returns.
     /// Skipped while a backup holds the repository lock, since the run refreshes on finish.
+    /// A request that arrives while a fetch runs is remembered and served when it returns,
+    /// since the repository, password or snapshots may have changed since it started.
     func refreshSnapshots() {
+        if snapshotsLoading {
+            snapshotsRefreshPending = true
+            return
+        }
         // Secrets that read back prove the keychain half of readinessProblems().
-        guard runner == nil, !snapshotsLoading, config.problems().isEmpty,
+        guard runner == nil, config.problems().isEmpty,
               let secrets = Keychain.readSecrets() else { return }
         snapshotsLoading = true
         rebuildMenuIfOpen()
+        let repository = config.repository
         SnapshotLister.fetch(config: config, secrets: secrets, limit: 5) { [weak self] snapshots in
             guard let self else { return }
             self.snapshotsLoading = false
-            self.snapshots = snapshots
+            // Snapshots of a repository that Settings replaced meanwhile must not show.
+            if repository == self.config.repository {
+                self.snapshots = snapshots
+            }
             self.rebuildMenuIfOpen()
+            if self.snapshotsRefreshPending {
+                self.snapshotsRefreshPending = false
+                self.refreshSnapshots()
+            }
         }
     }
 
