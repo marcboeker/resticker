@@ -31,10 +31,10 @@ and environment variables in the Keychain, under the service `resticker`. To
 test the app as if freshly installed, clear both.
 
 Find the bundle identifier in [Resources/Info.plist](../Resources/Info.plist)
-(`net.at6.resticker`), then remove its UserDefaults:
+(`one.m8n.resticker`), then remove its UserDefaults:
 
 ```sh
-defaults delete net.at6.resticker
+defaults delete one.m8n.resticker
 ```
 
 Remove the Keychain items:

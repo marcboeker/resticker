@@ -1,5 +1,5 @@
 APP_NAME          := Resticker
-BUNDLE_ID         := net.at6.resticker
+BUNDLE_ID         := one.m8n.resticker
 INSTALL_DIR       := $(HOME)/Applications
 INSTALLED_APP     := $(INSTALL_DIR)/$(APP_NAME).app
 KEYCHAIN_SERVICE  := resticker

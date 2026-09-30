@@ -55,8 +55,8 @@ public final class BackupRunner {
     private let options: PipelineOptions
     private let onEvent: (RunEvent) -> Void
 
-    private let queue = DispatchQueue(label: "net.at6.resticker.runner")
-    private let ioQueue = DispatchQueue(label: "net.at6.resticker.io", attributes: .concurrent)
+    private let queue = DispatchQueue(label: "one.m8n.resticker.runner")
+    private let ioQueue = DispatchQueue(label: "one.m8n.resticker.io", attributes: .concurrent)
     private let lock = NSLock()
     private var currentProcess: Process?
     private var isCancelled = false

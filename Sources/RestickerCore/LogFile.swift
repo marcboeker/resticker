@@ -12,7 +12,7 @@ public final class LogFile {
     }
 
     private let maxBytes = 5 * 1024 * 1024
-    private let queue = DispatchQueue(label: "net.at6.resticker.log")
+    private let queue = DispatchQueue(label: "one.m8n.resticker.log")
     private var lines: [String] = []
     private var totalBytes = 0
     private var listeners: [UUID: (String) -> Void] = [:]

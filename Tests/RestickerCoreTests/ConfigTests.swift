@@ -6,7 +6,7 @@ final class ConfigTests: XCTestCase {
     /// real UserDefaults. A unique name per test would leave an empty plist behind in
     /// ~/Library/Preferences on every run: removing a domain does not delete its file.
     private func makeDefaults() -> UserDefaults {
-        let suiteName = "net.at6.resticker.tests"
+        let suiteName = "one.m8n.resticker.tests"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }

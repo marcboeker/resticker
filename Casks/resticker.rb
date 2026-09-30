@@ -30,10 +30,10 @@ cask "resticker" do
 
   # Quit the running app before Homebrew replaces the bundle on upgrade/uninstall — otherwise
   # the update clobbers a live process.
-  uninstall quit: "net.at6.resticker"
+  uninstall quit: "one.m8n.resticker"
 
   zap trash: [
     "~/Library/Application Support/Resticker",
-    "~/Library/Preferences/net.at6.resticker.plist",
+    "~/Library/Preferences/one.m8n.resticker.plist",
   ]
 end
