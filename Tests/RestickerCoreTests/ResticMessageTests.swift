@@ -4,11 +4,23 @@ import XCTest
 final class ResticMessageTests: XCTestCase {
     func testDecodesStatus() {
         let line = #"{"message_type":"status","seconds_elapsed":12,"percent_done":0.4212,"total_files":100,"files_done":42,"total_bytes":1000,"bytes_done":421,"current_files":["/Users/tester/a.txt"]}"#
-        guard case .status(let bytesRemaining, let file)? = ResticMessage.decode(line: line) else {
+        guard case .status(let progress)? = ResticMessage.decode(line: line) else {
             return XCTFail("expected a status message")
         }
-        XCTAssertEqual(bytesRemaining, 579)
-        XCTAssertEqual(file, "/Users/tester/a.txt")
+        XCTAssertEqual(progress.bytesRemaining, 579)
+        XCTAssertEqual(progress.fraction ?? 0, 0.4212, accuracy: 0.0001)
+        XCTAssertNil(progress.secondsRemaining)
+        XCTAssertEqual(progress.currentFile, "/Users/tester/a.txt")
+    }
+
+    func testDecodesStatusTimeRemaining() {
+        let line = #"{"message_type":"status","seconds_remaining":95,"percent_done":1.2,"total_bytes":10,"bytes_done":10}"#
+        guard case .status(let progress)? = ResticMessage.decode(line: line) else {
+            return XCTFail("expected a status message")
+        }
+        XCTAssertEqual(progress.secondsRemaining, 95)
+        XCTAssertEqual(progress.fraction, 1)
+        XCTAssertEqual(progress.bytesRemaining, 0)
     }
 
     func testDecodesSummaryAndPrefersThePackedFigure() {

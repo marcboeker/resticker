@@ -62,8 +62,39 @@ public struct BackupSummary: Codable, Equatable {
     }
 }
 
+/// One `status` message of `restic backup --json`. restic counts every source byte it
+/// has read, unchanged ones included, so this tracks the scan rather than the upload.
+public struct BackupProgress: Equatable {
+    /// 0...1. restic's own figure, which can step back while the scan still finds files.
+    public var fraction: Double?
+    public var bytesDone: Int64?
+    public var totalBytes: Int64?
+    /// Only set once the scan has found every file.
+    public var secondsRemaining: Int?
+    public var currentFile: String?
+
+    public init(
+        fraction: Double? = nil,
+        bytesDone: Int64? = nil,
+        totalBytes: Int64? = nil,
+        secondsRemaining: Int? = nil,
+        currentFile: String? = nil
+    ) {
+        self.fraction = fraction
+        self.bytesDone = bytesDone
+        self.totalBytes = totalBytes
+        self.secondsRemaining = secondsRemaining
+        self.currentFile = currentFile
+    }
+
+    public var bytesRemaining: Int64? {
+        guard let totalBytes, let bytesDone else { return nil }
+        return max(0, totalBytes - bytesDone)
+    }
+}
+
 public enum ResticMessage: Equatable {
-    case status(bytesRemaining: Int64?, currentFile: String?)
+    case status(BackupProgress)
     case summary(BackupSummary)
     case error(String)
 
@@ -76,11 +107,15 @@ public enum ResticMessage: Equatable {
     }
 
     private struct Status: Decodable {
+        let percentDone: Double?
+        let secondsRemaining: Int?
         let totalBytes: Int64?
         let bytesDone: Int64?
         let currentFiles: [String]?
 
         enum CodingKeys: String, CodingKey {
+            case percentDone = "percent_done"
+            case secondsRemaining = "seconds_remaining"
             case totalBytes = "total_bytes"
             case bytesDone = "bytes_done"
             case currentFiles = "current_files"
@@ -102,27 +137,30 @@ public enum ResticMessage: Equatable {
         let message: String?
     }
 
+    private static let decoder = JSONDecoder()
+
     /// Returns nil for anything that is not a restic JSON message, which includes
     /// plain text warnings on stderr. Those go to the log untouched.
     public static func decode(line: String) -> ResticMessage? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("{"), let data = trimmed.data(using: .utf8) else { return nil }
-        let decoder = JSONDecoder()
-        guard let envelope = try? decoder.decode(Envelope.self, from: data) else { return nil }
+        guard let envelope = try? Self.decoder.decode(Envelope.self, from: data) else { return nil }
 
         switch envelope.messageType {
         case "status":
-            guard let status = try? decoder.decode(Status.self, from: data) else { return nil }
-            var remaining: Int64?
-            if let total = status.totalBytes, let done = status.bytesDone {
-                remaining = max(0, total - done)
-            }
-            return .status(bytesRemaining: remaining, currentFile: status.currentFiles?.first)
+            guard let status = try? Self.decoder.decode(Status.self, from: data) else { return nil }
+            return .status(BackupProgress(
+                fraction: status.percentDone.map { min(max($0, 0), 1) },
+                bytesDone: status.bytesDone,
+                totalBytes: status.totalBytes,
+                secondsRemaining: status.secondsRemaining,
+                currentFile: status.currentFiles?.first
+            ))
         case "summary":
-            guard let summary = try? decoder.decode(BackupSummary.self, from: data) else { return nil }
+            guard let summary = try? Self.decoder.decode(BackupSummary.self, from: data) else { return nil }
             return .summary(summary)
         case "error":
-            guard let message = try? decoder.decode(ErrorMessage.self, from: data) else { return nil }
+            guard let message = try? Self.decoder.decode(ErrorMessage.self, from: data) else { return nil }
             let text = message.error?.message ?? "unknown error"
             // restic usually puts the path into the message already ("open /x: permission denied").
             if let item = message.item, !item.isEmpty, !text.contains(item) {
@@ -130,7 +168,7 @@ public enum ResticMessage: Equatable {
             }
             return .error(text)
         case "exit_error":
-            guard let message = try? decoder.decode(ExitError.self, from: data) else { return nil }
+            guard let message = try? Self.decoder.decode(ExitError.self, from: data) else { return nil }
             // Fatal messages can add hint lines. The first line carries the cause.
             let text = message.message?.split(separator: "\n").first.map(String.init) ?? ""
             return .error(text.isEmpty ? "restic exited with code \(message.code ?? -1)" : text)

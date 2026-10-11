@@ -8,6 +8,7 @@ extension AppDelegate {
 
     func menuDidClose(_ menu: NSMenu) {
         isMenuOpen = false
+        activityView?.stopAnimating()
     }
 
     /// Redraws the open menu, so a snapshot refresh started from its reload button shows
@@ -28,15 +29,11 @@ extension AppDelegate {
         menu.addItem(.separator())
 
         let problems = readinessProblems()
-        if !problems.isEmpty {
-            for problem in problems {
-                menu.addItem(row(MenuText.warning("Not configured: \(problem.message)"), NSAttributedString()))
-            }
-            menu.addItem(.separator())
-        }
+        let status = NSMenuItem()
+        status.view = statusBlock(problems: problems)
+        menu.addItem(status)
 
-        menu.addItem(detail("Status", MenuText.value(statusLine, tone: statusTone)))
-        menu.addItem(detail("Last backup", timestampValue(state.lastSuccessAt, tone: lastBackupTone)))
+        menu.addItem(detail("Last backup", timestampValue(state.lastSuccessAt)))
         if state.lastSuccessAt != nil {
             let transferred = MenuText.value(Formatting.bytes(state.lastBytesAdded))
             transferred.append(MenuText.label(" in "))
@@ -64,15 +61,18 @@ extension AppDelegate {
         }
         menu.addItem(.separator())
 
-        let backup = NSMenuItem(title: "Back Up Now", action: #selector(backupNow(_:)), keyEquivalent: "b")
-        backup.target = self
-        backup.isEnabled = runner == nil && problems.isEmpty
-        menu.addItem(backup)
-
-        let cancel = NSMenuItem(title: "Cancel Backup", action: #selector(cancelBackup(_:)), keyEquivalent: "")
-        cancel.target = self
-        cancel.isEnabled = runner != nil
-        menu.addItem(cancel)
+        // One of the two at a time: a disabled twin of each would only add noise.
+        if runner == nil {
+            let backup = NSMenuItem(title: "Back Up Now", action: #selector(backupNow(_:)), keyEquivalent: "b")
+            backup.target = self
+            backup.isEnabled = problems.isEmpty
+            menu.addItem(backup)
+        } else {
+            let cancel = NSMenuItem(title: "Cancel Backup", action: #selector(cancelBackup(_:)), keyEquivalent: ".")
+            cancel.target = self
+            cancel.isEnabled = !isCancelling
+            menu.addItem(cancel)
+        }
         menu.addItem(.separator())
 
         let log = NSMenuItem(title: "Open Log", action: #selector(openLog(_:)), keyEquivalent: "")
@@ -89,6 +89,48 @@ extension AppDelegate {
         menu.addItem(quit)
     }
 
+    /// The block at the top of the menu. A running pipeline shows its progress; otherwise
+    /// the block says whether the backups are in order, and what to fix if they are not.
+    private func statusBlock(problems: [ConfigProblem]) -> NSView {
+        if runner != nil {
+            let view = ActivityView(
+                title: activityTitle,
+                steps: runSteps,
+                current: currentStep,
+                progress: progress,
+                showsFigures: currentStep == .backup && !isCancelling
+            )
+            activityView = view
+            return view
+        }
+        activityView = nil
+        if !problems.isEmpty {
+            return StatusBlockView(symbol: "gearshape.circle.fill", tone: .warning, title: "Not configured",
+                                   detail: problems.map(\.message).joined(separator: "\n"))
+        }
+        if iconState == .error, let failure {
+            return StatusBlockView(symbol: "exclamationmark.triangle.fill", tone: .bad, title: failure.title, detail: failure.detail)
+        }
+        if state.lastSuccessAt == nil {
+            return StatusBlockView(symbol: "circle.dashed", tone: nil, title: "No backup yet")
+        }
+        if isBackupRecent {
+            return StatusBlockView(symbol: "checkmark.circle.fill", tone: .good, title: "Up to date")
+        }
+        return StatusBlockView(symbol: "exclamationmark.circle.fill", tone: .warning, title: "Last backup over a day ago")
+    }
+
+    private var activityTitle: String {
+        if isCancelling { return "Cancelling…" }
+        switch currentStep {
+        case nil: return "Starting…"
+        case .unlock: return "Unlocking repository…"
+        case .backup: return "Backing up…"
+        case .forget: return "Cleaning up snapshots…"
+        case .check: return "Checking repository…"
+        }
+    }
+
     /// A status row: the dim label on the left, the bright value at the menu's right edge.
     private func detail(_ label: String, _ value: NSAttributedString) -> NSMenuItem {
         row(MenuText.label(label), value)
@@ -101,23 +143,9 @@ extension AppDelegate {
     }
 
     /// "never" is the absence of a value, so it recedes instead of reading like one.
-    private func timestampValue(_ date: Date?, tone: Tone? = nil) -> NSAttributedString {
-        guard date != nil else { return MenuText.muted(Formatting.timestamp(nil), tone: tone) }
-        return MenuText.value(Formatting.timestamp(date), tone: tone)
-    }
-
-    private var statusTone: Tone {
-        switch iconState {
-        case .idle: .good
-        case .running: .busy
-        case .error: .bad
-        }
-    }
-
-    /// Green within the day that the menu bar icon shows its check mark for, orange after it.
-    private var lastBackupTone: Tone {
-        if state.lastSuccessAt == nil { return .bad }
-        return isBackupRecent ? .good : .warning
+    private func timestampValue(_ date: Date?) -> NSAttributedString {
+        guard date != nil else { return MenuText.muted(Formatting.timestamp(nil)) }
+        return MenuText.value(Formatting.timestamp(date))
     }
 
     private var appVersion: String {
@@ -233,7 +261,7 @@ private final class DetailRowView: NSView {
     }
 }
 
-private extension NSTextField {
+extension NSTextField {
     /// `NSTextField(labelWithAttributedString:)` makes a wrapping label, but the menu rows
     /// are one line high. A plain label does not wrap.
     static func singleLineLabel(_ text: NSAttributedString) -> NSTextField {
@@ -243,17 +271,15 @@ private extension NSTextField {
     }
 }
 
-/// How a menu value should read at a glance, shown as a colored dot before it.
+/// How the status block should read at a glance, shown as the color of its symbol.
 enum Tone {
     case good
-    case busy
     case warning
     case bad
 
     var color: NSColor {
         switch self {
         case .good: .systemGreen
-        case .busy: .controlAccentColor
         case .warning: .systemOrange
         case .bad: .systemRed
         }
@@ -262,7 +288,7 @@ enum Tone {
 
 /// The menu's type scale. Contrast carries the hierarchy: labels are dim, values are
 /// bright, and the values that need no reading (absent dates, snapshot IDs) are faint.
-private enum MenuText {
+enum MenuText {
     static let size: CGFloat = 12
 
     static func title(_ text: String) -> NSAttributedString {
@@ -288,25 +314,19 @@ private enum MenuText {
         ])
     }
 
-    /// A bright value with tabular digits. A tone puts a colored dot before it; a bad tone
-    /// also colors the text, because an error must not look like a normal value.
-    static func value(_ text: String, weight: NSFont.Weight = .medium, tone: Tone? = nil) -> NSMutableAttributedString {
-        let color: NSColor = tone == .bad ? .systemRed : .labelColor
-        let result = dot(tone)
-        result.append(NSAttributedString(string: text, attributes: [
+    /// A bright value with tabular digits.
+    static func value(_ text: String, weight: NSFont.Weight = .medium) -> NSMutableAttributedString {
+        NSMutableAttributedString(string: text, attributes: [
             .font: NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight),
-            .foregroundColor: color,
-        ]))
-        return result
+            .foregroundColor: NSColor.labelColor,
+        ])
     }
 
-    static func muted(_ text: String, tone: Tone? = nil) -> NSMutableAttributedString {
-        let result = dot(tone)
-        result.append(NSAttributedString(string: text, attributes: [
+    static func muted(_ text: String) -> NSMutableAttributedString {
+        NSMutableAttributedString(string: text, attributes: [
             .font: NSFont.systemFont(ofSize: size),
             .foregroundColor: NSColor.tertiaryLabelColor,
-        ]))
-        return result
+        ])
     }
 
     static func code(_ text: String) -> NSMutableAttributedString {
@@ -316,19 +336,57 @@ private enum MenuText {
         ])
     }
 
-    static func warning(_ text: String) -> NSMutableAttributedString {
-        NSMutableAttributedString(string: "⚠︎ \(text)", attributes: [
-            .font: NSFont.systemFont(ofSize: size, weight: .medium),
-            .foregroundColor: NSColor.systemOrange,
-        ])
+    /// Headlines, the percentage and the file path of the status block.
+    /// `digits` keeps a changing number from jittering.
+    static func styled(
+        _ text: String, size: CGFloat, weight: NSFont.Weight = .regular, color: NSColor = .labelColor,
+        digits: Bool = false, truncatesMiddle: Bool = false
+    ) -> NSAttributedString {
+        var attributes: [NSAttributedString.Key: Any] = [
+            .font: digits ? NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
+                : NSFont.systemFont(ofSize: size, weight: weight),
+            .foregroundColor: color,
+        ]
+        if truncatesMiddle {
+            // Both the root and the file name of a path show.
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineBreakMode = .byTruncatingMiddle
+            attributes[.paragraphStyle] = paragraph
+        }
+        return NSAttributedString(string: text, attributes: attributes)
     }
 
-    private static func dot(_ tone: Tone?) -> NSMutableAttributedString {
-        guard let tone else { return NSMutableAttributedString() }
-        return NSMutableAttributedString(string: "●  ", attributes: [
-            .font: NSFont.systemFont(ofSize: 8),
-            .foregroundColor: tone.color,
-            .baselineOffset: 1.5,
-        ])
+    /// The small figures under the progress bar.
+    static func figure(_ text: String) -> NSAttributedString {
+        styled(text, size: 11, color: .secondaryLabelColor, digits: true)
+    }
+
+    static func percent(_ text: String) -> NSAttributedString {
+        styled(text, size: 13, weight: .medium, color: .secondaryLabelColor, digits: true)
+    }
+
+    static func path(_ text: String) -> NSAttributedString {
+        styled(text, size: 11, color: .tertiaryLabelColor, truncatesMiddle: true)
+    }
+
+    /// The run's steps in order: done steps dim, the current one bright, later ones faint.
+    static func steps(_ steps: [PipelineStep], current: PipelineStep?) -> NSAttributedString {
+        let currentIndex = current.flatMap { steps.firstIndex(of: $0) } ?? -1
+        let result = NSMutableAttributedString()
+        for (index, step) in steps.enumerated() {
+            if index > 0 {
+                result.append(NSAttributedString(string: "  ›  ", attributes: [
+                    .font: NSFont.systemFont(ofSize: 11),
+                    .foregroundColor: NSColor.quaternaryLabelColor,
+                ]))
+            }
+            let color: NSColor = index < currentIndex ? .secondaryLabelColor
+                : index == currentIndex ? .labelColor : .tertiaryLabelColor
+            result.append(NSAttributedString(string: step.title, attributes: [
+                .font: NSFont.systemFont(ofSize: 11, weight: index == currentIndex ? .semibold : .regular),
+                .foregroundColor: color,
+            ]))
+        }
+        return result
     }
 }

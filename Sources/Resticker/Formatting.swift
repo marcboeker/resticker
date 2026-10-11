@@ -17,10 +17,14 @@ enum Formatting {
         return formatter.string(from: date)
     }
 
-    static func bytes(_ value: Int64) -> String {
+    private static let byteFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
-        return formatter.string(fromByteCount: value)
+        return formatter
+    }()
+
+    static func bytes(_ value: Int64) -> String {
+        byteFormatter.string(fromByteCount: value)
     }
 
     /// GB with two decimals above 1 GB, otherwise whole MB. Menu bar space is tight,

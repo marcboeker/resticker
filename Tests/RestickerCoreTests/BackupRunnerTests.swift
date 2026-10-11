@@ -16,6 +16,15 @@ final class BackupRunnerTests: XCTestCase {
             XCTAssertFalse(BackupRunner.snapshotWritten(backupStatus: status), "exit \(status)")
         }
     }
+
+    func testStepsFollowTheOptions() {
+        let all = PipelineOptions(unlock: true, cleanup: true, check: true, runMaintenance: true)
+        XCTAssertEqual(all.steps, [.unlock, .backup, .forget, .check])
+        let noMaintenance = PipelineOptions(unlock: true, cleanup: true, check: true, runMaintenance: false)
+        XCTAssertEqual(noMaintenance.steps, [.unlock, .backup])
+        let checkOnly = PipelineOptions(unlock: false, cleanup: false, check: true, runMaintenance: true)
+        XCTAssertEqual(checkOnly.steps, [.backup, .check])
+    }
 }
 
 final class BackupRunnerCancelTests: XCTestCase {

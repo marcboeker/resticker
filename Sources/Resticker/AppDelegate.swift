@@ -35,8 +35,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var isMenuOpen = false
 
     var iconState: IconState = .idle
-    var statusLine = "Idle"
-    var bytesRemaining: Int64?
+    /// Why the last run failed, for the status block of the menu. Set with `.error`.
+    var failure: (title: String, detail: String?)?
+    /// The latest restic status of the running backup step. Nil outside of it.
+    var progress: BackupProgress?
+    /// The steps of the running pipeline, and the one it is in.
+    var runSteps: [PipelineStep] = []
+    var currentStep: PipelineStep?
+    var isCancelling = false
+    /// The activity block of the open menu, which progress updates in place instead of
+    /// redrawing the whole menu many times a second.
+    weak var activityView: ActivityView?
 
     private var currentSymbolName: String?
     private var currentSymbolImage: NSImage?
@@ -128,13 +137,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func startRunIfDue() {
         guard runner == nil else { return }
         guard readinessProblems().isEmpty else {
-            statusLine = "Not configured"
             iconState = .error
             updateStatusItem()
             return
         }
         guard !keychainDenied else {
-            statusLine = Self.keychainDeniedStatus
+            failure = Self.keychainDeniedFailure
             iconState = .error
             updateStatusItem()
             return
@@ -171,7 +179,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         startRun()
     }
 
-    private static let keychainDeniedStatus = "Keychain access denied — click Back up now to retry"
+    private static let keychainDeniedFailure = (title: "Keychain access denied", detail: "Choose Back Up Now to retry" as String?)
 
     /// Called by the Settings window after it saved a new repository password. The app
     /// wrote that item itself, so reading it back does not show the dialog the user denied.
@@ -186,18 +194,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func restoreStatusFromHistory() {
         if state.lastRunFailed {
             iconState = .error
-            statusLine = state.history.last?.detail ?? "Last backup failed"
+            failure = ("Last backup failed", state.history.last?.detail)
         } else {
             iconState = .idle
-            statusLine = "Idle"
         }
     }
 
     @objc func cancelBackup(_ sender: Any?) {
         guard let runner else { return }
         runner.cancel()
-        statusLine = "Cancelling…"
+        isCancelling = true
         updateStatusItem()
+        rebuildMenuIfOpen()
     }
 
     func startRun() {
@@ -205,7 +213,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         config = ConfigStore.resolveResticIfNeeded()
         let problems = readinessProblems()
         guard problems.isEmpty else {
-            statusLine = "Not configured: \(problems.map(\.message).joined(separator: ", "))"
             iconState = .error
             updateStatusItem()
             return
@@ -216,7 +223,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             secrets = value
         case .failure(let error):
             keychainDenied = error == .denied
-            statusLine = keychainDenied ? Self.keychainDeniedStatus : "Keychain read failed"
+            failure = keychainDenied ? Self.keychainDeniedFailure : ("Keychain read failed", nil)
             iconState = .error
             updateStatusItem()
             return
@@ -234,9 +241,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             reason: "restic backup"
         )
 
-        bytesRemaining = nil
+        progress = nil
+        failure = nil
+        runSteps = options.steps
+        currentStep = nil
+        isCancelling = false
         iconState = .running
-        statusLine = "Starting…"
         let backupRunner = BackupRunner(
             config: config,
             secrets: secrets,
@@ -247,6 +257,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         runner = backupRunner
         backupRunner.start()
         updateStatusItem()
+        rebuildMenuIfOpen()
     }
 
     // MARK: - Run events
@@ -254,15 +265,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func handle(_ event: RunEvent) {
         switch event {
         case .stepStarted(let step):
-            bytesRemaining = nil
-            statusLine = "Running \(step.title.lowercased())…"
+            progress = nil
+            currentStep = step
             iconState = .running
             updateStatusItem()
+            rebuildMenuIfOpen()
 
-        case .progress(let remaining, _):
-            bytesRemaining = remaining
-            statusLine = "Running backup…"
+        case .progress(let value):
+            progress = value
             updateStatusItem()
+            activityView?.update(progress: value)
 
         case .finished(let outcome):
             finish(outcome)
@@ -275,7 +287,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             activityToken = nil
         }
         runner = nil
-        bytesRemaining = nil
+        progress = nil
+        runSteps = []
+        currentStep = nil
+        isCancelling = false
         let now = Date()
 
         switch outcome.outcome {
@@ -288,13 +303,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             if let step = outcome.failedStep {
                 let detail = "\(step.title) failed: \(outcome.message ?? "unknown error")"
-                statusLine = detail
+                failure = ("\(step.title) failed", outcome.message ?? "unknown error")
                 iconState = .error
                 state.append(RunRecord(date: now, outcome: .success, duration: outcome.duration,
                                        bytesAdded: state.lastBytesAdded, detail: detail))
                 notify(title: "Resticker: \(step.title) failed", body: outcome.message ?? "See the log for details.")
             } else {
-                statusLine = "Idle"
                 iconState = .idle
                 state.append(RunRecord(date: now, outcome: .success, duration: outcome.duration,
                                        bytesAdded: state.lastBytesAdded))
@@ -310,7 +324,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             state = Schedule.afterFailure(state: state, config: config, now: now)
             let step = outcome.failedStep?.title ?? "Backup"
             let detail = "\(step) failed: \(outcome.message ?? "unknown error")"
-            statusLine = detail
+            failure = ("\(step) failed", outcome.message ?? "unknown error")
             iconState = .error
             state.append(RunRecord(date: now, outcome: .failure, duration: outcome.duration,
                                    bytesAdded: 0, detail: detail))
@@ -318,13 +332,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         case .cancelled:
             state = Schedule.afterCancel(state: state)
-            statusLine = "Idle"
             iconState = .idle
             state.append(RunRecord(date: now, outcome: .cancelled, duration: outcome.duration, bytesAdded: 0))
         }
 
         StateStore.save(state)
         updateStatusItem()
+        rebuildMenuIfOpen()
     }
 
     /// Refreshes the snapshot list shown in the menu. Runs off the main thread since it
@@ -390,13 +404,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             currentSymbolImage = image
         }
 
-        if let remaining = bytesRemaining, remaining > 0 {
+        if let remaining = progress?.bytesRemaining, remaining > 0 {
             button.title = " \(Formatting.remainingBytes(remaining))"
         } else {
             button.title = ""
         }
 
-        let showDots = iconState == .running && bytesRemaining == nil
+        let showDots = iconState == .running && progress == nil
         if iconState == .running || showDots {
             startAnimating()
             renderAnimatedFrame()
@@ -450,9 +464,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func startAnimating() {
         guard animationTimer == nil else { return }
         animationStart = Date()
-        animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.renderAnimatedFrame() }
         }
+        // Common modes keep the icon turning while the menu is open and tracks the mouse.
+        RunLoop.main.add(timer, forMode: .common)
+        animationTimer = timer
     }
 
     private func stopAnimating() {
@@ -467,7 +484,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let rotation = iconState == .running
             ? CGFloat((elapsed / iconRotationPeriod * 2 * .pi).truncatingRemainder(dividingBy: 2 * .pi))
             : 0
-        let showDots = iconState == .running && bytesRemaining == nil
+        let showDots = iconState == .running && progress == nil
         button.image = composedIcon(icon, rotation: rotation, dotsElapsed: showDots ? elapsed : nil)
     }
 

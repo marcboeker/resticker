@@ -29,6 +29,14 @@ public struct PipelineOptions {
         self.check = check
         self.runMaintenance = runMaintenance
     }
+
+    /// The steps a run with these options goes through when none of them fails.
+    public var steps: [PipelineStep] {
+        var steps: [PipelineStep] = unlock ? [.unlock, .backup] : [.backup]
+        if runMaintenance && cleanup { steps.append(.forget) }
+        if runMaintenance && check { steps.append(.check) }
+        return steps
+    }
 }
 
 public struct RunOutcome {
@@ -44,7 +52,7 @@ public struct RunOutcome {
 
 public enum RunEvent {
     case stepStarted(PipelineStep)
-    case progress(bytesRemaining: Int64?, currentFile: String?)
+    case progress(BackupProgress)
     case finished(RunOutcome)
 }
 
@@ -135,8 +143,8 @@ public final class BackupRunner {
 
         let backup = execute(.backup, arguments: backupArguments) { line in
             switch ResticMessage.decode(line: line) {
-            case .status(let bytesRemaining, let file):
-                self.emit(.progress(bytesRemaining: bytesRemaining, currentFile: file))
+            case .status(let progress):
+                self.emit(.progress(progress))
             case .summary(let value):
                 summary = value
             default:
@@ -198,6 +206,8 @@ public final class BackupRunner {
         onLine: ((String) -> Void)? = nil
     ) -> ExecutionResult {
         let process = ResticProcess.make(config: config, secrets: secrets, arguments: [step.rawValue] + arguments)
+        // restic prints a status line as often as 60 times a second by default; the UI needs two.
+        if step == .backup { process.environment?["RESTIC_PROGRESS_FPS"] = "2" }
 
         let output = Pipe()
         let errors = Pipe()
