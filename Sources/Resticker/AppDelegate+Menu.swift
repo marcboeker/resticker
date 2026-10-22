@@ -63,36 +63,37 @@ extension AppDelegate {
 
         // One of the two at a time: a disabled twin of each would only add noise.
         if runner == nil {
-            let backup = NSMenuItem(title: "Back Up Now", action: #selector(backupNow(_:)), keyEquivalent: "b")
-            backup.target = self
-            backup.isEnabled = problems.isEmpty
-            menu.addItem(backup)
+            menu.addItem(actionItem("Back Up Now", #selector(backupNow(_:)), key: "b",
+                                    enabled: problems.isEmpty && restoreRunner == nil))
         } else {
-            let cancel = NSMenuItem(title: "Cancel Backup", action: #selector(cancelBackup(_:)), keyEquivalent: ".")
-            cancel.target = self
-            cancel.isEnabled = !isCancelling
-            menu.addItem(cancel)
+            menu.addItem(actionItem("Cancel Backup", #selector(cancelBackup(_:)), key: ".", enabled: !isCancelling))
+        }
+        if restoreRunner == nil {
+            menu.addItem(actionItem("Restore…", #selector(openRestore(_:)), key: "r",
+                                    enabled: problems.isEmpty && runner == nil))
+        } else {
+            menu.addItem(actionItem("Cancel Restore", #selector(cancelRestore(_:)), key: ".",
+                                    enabled: !restoreWindowController.model.isCancelling))
         }
         menu.addItem(.separator())
 
-        let log = NSMenuItem(title: "Open Log", action: #selector(openLog(_:)), keyEquivalent: "")
-        log.target = self
-        menu.addItem(log)
-
-        let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings(_:)), keyEquivalent: ",")
-        settings.target = self
-        menu.addItem(settings)
+        menu.addItem(actionItem("Open Log", #selector(openLog(_:)), key: ""))
+        menu.addItem(actionItem("Settings…", #selector(openSettings(_:)), key: ","))
         menu.addItem(.separator())
+        menu.addItem(actionItem("Quit", #selector(quit(_:)), key: "q"))
+    }
 
-        let quit = NSMenuItem(title: "Quit", action: #selector(quit(_:)), keyEquivalent: "q")
-        quit.target = self
-        menu.addItem(quit)
+    private func actionItem(_ title: String, _ action: Selector, key: String, enabled: Bool = true) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.target = self
+        item.isEnabled = enabled
+        return item
     }
 
     /// The block at the top of the menu. A running pipeline shows its progress; otherwise
     /// the block says whether the backups are in order, and what to fix if they are not.
     private func statusBlock(problems: [ConfigProblem]) -> NSView {
-        if runner != nil {
+        if runner != nil || restoreRunner != nil {
             let view = ActivityView(
                 title: activityTitle,
                 steps: runSteps,
@@ -121,6 +122,7 @@ extension AppDelegate {
     }
 
     private var activityTitle: String {
+        if restoreRunner != nil { return restoreWindowController.model.isCancelling ? "Cancelling…" : "Restoring…" }
         if isCancelling { return "Cancelling…" }
         switch currentStep {
         case nil: return "Starting…"

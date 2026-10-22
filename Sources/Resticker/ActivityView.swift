@@ -156,9 +156,9 @@ final class ActivityView: NSView {
     }
 
     func update(progress: BackupProgress) {
-        guard let figures else { return }
         bar.fraction = progress.fraction
         set(percentField, MenuText.percent(progress.fraction.map { "\(Int($0 * 100))%" } ?? ""))
+        guard let figures else { return }
 
         if let done = progress.bytesDone, let total = progress.totalBytes, total > 0 {
             set(figures.amount, MenuText.figure("\(Formatting.bytes(done)) of \(Formatting.bytes(total))"))

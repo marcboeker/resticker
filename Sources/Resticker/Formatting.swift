@@ -5,16 +5,33 @@ enum Formatting {
     /// or last night, which is exactly what you want to know.
     static func timestamp(_ date: Date?) -> String {
         guard let date else { return "never" }
-        let formatter = DateFormatter()
-        formatter.locale = Locale.current
+        let formatter: DateFormatter
         if Calendar.current.isDateInToday(date) {
-            formatter.dateFormat = "'today' HH:mm"
+            formatter = todayFormatter
         } else if Calendar.current.isDateInYesterday(date) {
-            formatter.dateFormat = "'yesterday' HH:mm"
+            formatter = yesterdayFormatter
+        } else if Calendar.current.isDate(date, equalTo: Date(), toGranularity: .year) {
+            formatter = thisYearFormatter
         } else {
-            formatter.dateFormat = "d MMM HH:mm"
+            // Dates from another year need the year.
+            formatter = otherYearFormatter
         }
         return formatter.string(from: date)
+    }
+
+    // The Restore window formats every snapshot's date, so the formatters are made once.
+    private static let todayFormatter = dateFormatter("'today' HH:mm")
+    private static let yesterdayFormatter = dateFormatter("'yesterday' HH:mm")
+    private static let thisYearFormatter = dateFormatter("d MMM HH:mm")
+    private static let otherYearFormatter = dateFormatter("d MMM yyyy HH:mm")
+
+    private static func dateFormatter(_ format: String) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.autoupdatingCurrent
+        // The formatters live as long as the app, which can outlast a time zone change.
+        formatter.timeZone = TimeZone.autoupdatingCurrent
+        formatter.dateFormat = format
+        return formatter
     }
 
     private static let byteFormatter: ByteCountFormatter = {

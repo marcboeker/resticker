@@ -7,8 +7,8 @@
 _Chuck Norris does not use Resticker. His files are too afraid to get lost._ For
 everyone else, Resticker is a macOS menu bar app that runs [restic](https://restic.net)
 backups on a schedule. It backs up in the background, catches up after your Mac wakes
-from sleep, and shows the last backup time, how much data moved, and your recent
-snapshots right in the menu.
+from sleep, shows the last backup time, how much data moved, and your recent
+snapshots right in the menu, and restores files from any snapshot in a few clicks.
 
 <p align="center">
   <img src="docs/resticker.png" alt="Resticker menu bar dropdown" height="400">
@@ -24,6 +24,9 @@ snapshots right in the menu.
 - **Scheduled maintenance** — `restic forget --prune` and `restic check` run
   automatically on their own interval after a successful backup, so retention and
   integrity checks don't need a separate cron job.
+- **Point-and-click restore** — browse any snapshot's file tree, check the files and
+  folders you want, and restore them to a folder you pick. Existing files in the target
+  are never overwritten.
 - **Automatic retries** — a failed backup retries a configurable number of times, with
   a delay between attempts, before falling back to the regular schedule.
 - **Keychain-backed secrets** — your restic repository password and any cloud
@@ -89,11 +92,22 @@ A few things worth knowing before you rely on this:
 - Adding a source path that needs extra access, such as Mail, Messages, or Photos,
   triggers the macOS privacy dialog right away. If you deny it, Settings shows a
   warning with a button to open **Privacy & Security → Full Disk Access**.
+- **Restore…** puts files back under their original full paths inside the target
+  folder, for example `<target>/Users/you/Documents/…`. Backups and restores never run
+  at the same time: a scheduled backup waits until the restore finishes. Canceling a
+  restore keeps what was already written, partial files included, and quitting
+  during a restore asks first.
 
 ## Restoring your data
 
-Resticker has no restore UI (yet). Restoring is a plain restic command against your
-repository, see the [restic restore documentation](https://restic.readthedocs.io/en/stable/050_restore.html).
+Choose **Restore…** in the menu, select a snapshot, and check the files and folders
+you want (a checked folder includes everything below it). Click **Restore…**, pick a
+target folder, and follow the progress in the window or the menu. When it finishes,
+a summary shows how many files were restored, skipped, or failed, with a button to
+show them in Finder.
+
+For anything the window doesn't cover, use restic directly, see the
+[restic restore documentation](https://restic.readthedocs.io/en/stable/050_restore.html).
 
 ## License
 

@@ -20,6 +20,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     lazy var settingsWindowController = SettingsWindowController(appDelegate: self)
 
     var runner: BackupRunner?
+    /// Backups and restores never overlap: scheduled backups wait while this is set.
+    var restoreRunner: RestoreRunner?
+    lazy var restoreWindowController = RestoreWindowController(appDelegate: self)
     /// Set when the user denied the keychain dialog. Each scheduled run (and each snapshot
     /// refresh) would show that dialog again, so they wait until "Back up now" or a
     /// password saved in Settings clears it.
@@ -102,8 +105,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard restoreRunner != nil else { return .terminateNow }
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "A restore is running. Quit and stop it?"
+        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         runner?.cancel()
+        restoreRunner?.cancel()
         stopAnimating()
     }
 
@@ -134,8 +148,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Refreshes the idle/error status from the current `config`, then starts a backup if
     /// one is due and nothing blocks it. Shared by `tick()` and `applyConfigChange`.
-    private func startRunIfDue() {
-        guard runner == nil else { return }
+    func startRunIfDue() {
+        guard runner == nil, restoreRunner == nil else { return }
         guard readinessProblems().isEmpty else {
             iconState = .error
             updateStatusItem()
@@ -191,7 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Shows the last recorded run's error, or idle when it passed.
-    private func restoreStatusFromHistory() {
+    func restoreStatusFromHistory() {
         if state.lastRunFailed {
             iconState = .error
             failure = ("Last backup failed", state.history.last?.detail)
@@ -209,7 +223,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func startRun() {
-        guard runner == nil else { return }
+        guard runner == nil, restoreRunner == nil else { return }
         config = ConfigStore.resolveResticIfNeeded()
         let problems = readinessProblems()
         guard problems.isEmpty else {
@@ -236,17 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             runMaintenance: Schedule.isCleanupDue(state: state, config: config, now: Date())
         )
 
-        activityToken = ProcessInfo.processInfo.beginActivity(
-            options: [.idleSystemSleepDisabled, .suddenTerminationDisabled],
-            reason: "restic backup"
-        )
-
-        progress = nil
-        failure = nil
-        runSteps = options.steps
-        currentStep = nil
-        isCancelling = false
-        iconState = .running
+        beginJob(reason: "restic backup", steps: options.steps)
         let backupRunner = BackupRunner(
             config: config,
             secrets: secrets,
@@ -281,16 +285,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func finish(_ outcome: RunOutcome) {
+    /// Keeps the Mac awake while a backup or restore runs, and clears what the last one showed.
+    func beginJob(reason: String, steps: [PipelineStep]) {
+        activityToken = ProcessInfo.processInfo.beginActivity(
+            options: [.idleSystemSleepDisabled, .suddenTerminationDisabled],
+            reason: reason
+        )
+        progress = nil
+        failure = nil
+        runSteps = steps
+        currentStep = nil
+        isCancelling = false
+        iconState = .running
+    }
+
+    func endJob() {
         if let token = activityToken {
             ProcessInfo.processInfo.endActivity(token)
             activityToken = nil
         }
-        runner = nil
         progress = nil
         runSteps = []
         currentStep = nil
         isCancelling = false
+    }
+
+    private func finish(_ outcome: RunOutcome) {
+        endJob()
+        runner = nil
         let now = Date()
 
         switch outcome.outcome {
@@ -379,7 +401,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func notify(title: String, body: String) {
+    func notify(title: String, body: String) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body

@@ -59,15 +59,11 @@ public enum RunEvent {
 /// Runs the restic pipeline in the background and reports progress on the main queue.
 public final class BackupRunner {
     private let config: Config
-    private let secrets: RepositorySecrets
     private let options: PipelineOptions
     private let onEvent: (RunEvent) -> Void
 
     private let queue = DispatchQueue(label: "one.m8n.resticker.runner")
-    private let ioQueue = DispatchQueue(label: "one.m8n.resticker.io", attributes: .concurrent)
-    private let lock = NSLock()
-    private var currentProcess: Process?
-    private var isCancelled = false
+    private let command: ResticCommand
 
     /// `secrets` are read from the keychain by the caller right before starting a run.
     public init(
@@ -77,35 +73,22 @@ public final class BackupRunner {
         onEvent: @escaping (RunEvent) -> Void
     ) {
         self.config = config
-        self.secrets = secrets
         self.options = options
         self.onEvent = onEvent
+        self.command = ResticCommand(config: config, secrets: secrets)
     }
 
     public func start() {
         queue.async { [self] in runPipeline() }
     }
 
-    /// SIGINT lets restic remove its own lock before it exits. SIGKILL is the last resort
-    /// and leaves a stale lock, which the unlock step clears on the next run.
+    /// Files restic already uploaded stay in the repository; a stale lock left by a hard
+    /// kill is cleared by the unlock step on the next run.
     public func cancel() {
-        lock.lock()
-        isCancelled = true
-        let process = currentProcess
-        lock.unlock()
-        guard let process, process.isRunning else { return }
-        process.interrupt()
-        let pid = process.processIdentifier
-        DispatchQueue.global().asyncAfter(deadline: .now() + 10) {
-            if process.isRunning { kill(pid, SIGKILL) }
-        }
+        command.cancel()
     }
 
-    private var cancelled: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return isCancelled
-    }
+    private var cancelled: Bool { command.cancelled }
 
     // MARK: - Pipeline
 
@@ -193,106 +176,15 @@ public final class BackupRunner {
         status == 0 || status == 3
     }
 
-    // MARK: - Process handling
-
-    private struct ExecutionResult {
-        var status: Int32
-        var lastError: String?
-    }
-
     private func execute(
         _ step: PipelineStep,
         arguments: [String],
         onLine: ((String) -> Void)? = nil
-    ) -> ExecutionResult {
-        let process = ResticProcess.make(config: config, secrets: secrets, arguments: [step.rawValue] + arguments)
-        // restic prints a status line as often as 60 times a second by default; the UI needs two.
-        if step == .backup { process.environment?["RESTIC_PROGRESS_FPS"] = "2" }
-
-        let output = Pipe()
-        let errors = Pipe()
-        process.standardOutput = output
-        process.standardError = errors
-
-        // Starting the process under the lock means `cancel()` either sees the cancel flag
-        // here first or finds the process already running; it can never miss it.
-        lock.lock()
-        if isCancelled {
-            lock.unlock()
-            return ExecutionResult(status: -1, lastError: "cancelled")
-        }
-        do {
-            try process.run()
-            currentProcess = process
-            lock.unlock()
-        } catch {
-            lock.unlock()
-            LogFile.shared.write("\(step.rawValue) could not start: \(error.localizedDescription)")
-            return ExecutionResult(status: -1, lastError: error.localizedDescription)
-        }
-
-        let errorLock = NSLock()
-        var lastError: String?
-        let group = DispatchGroup()
-
-        ioQueue.async(group: group) {
-            readLines(from: output.fileHandleForReading) { line in
-                onLine?(line)
-                let message = ResticMessage.decode(line: line)
-                if case .error(let text)? = message {
-                    errorLock.lock()
-                    lastError = text
-                    errorLock.unlock()
-                }
-                // Status messages arrive many times a second and would drown the log.
-                if case .status? = message { return }
-                LogFile.shared.write("[\(step.rawValue)] \(line)")
-            }
-        }
-
-        ioQueue.async(group: group) {
-            readLines(from: errors.fileHandleForReading) { line in
-                if let text = ResticMessage.errorText(stderrLine: line) {
-                    errorLock.lock()
-                    lastError = text
-                    errorLock.unlock()
-                }
-                LogFile.shared.write("[\(step.rawValue)!] \(line)")
-            }
-        }
-
-        process.waitUntilExit()
-        group.wait()
-
-        lock.lock()
-        currentProcess = nil
-        lock.unlock()
-
-        let status = process.terminationStatus
-        LogFile.shared.write("[\(step.rawValue)] exit \(status)")
-        errorLock.lock()
-        let message = lastError
-        errorLock.unlock()
-        return ExecutionResult(status: status, lastError: status == 0 ? nil : message)
+    ) -> ResticCommand.Result {
+        command.run([step.rawValue] + arguments, onLine: onLine)
     }
 
     private func emit(_ event: RunEvent) {
         DispatchQueue.main.async { self.onEvent(event) }
     }
-}
-
-/// Reads a file handle to end of file and hands over complete lines.
-private func readLines(from handle: FileHandle, _ emit: (String) -> Void) {
-    var buffer = Data()
-    while true {
-        let chunk = handle.availableData
-        if chunk.isEmpty { break }
-        buffer.append(chunk)
-        while let index = buffer.firstIndex(of: 0x0A) {
-            let line = buffer.subdata(in: buffer.startIndex..<index)
-            buffer.removeSubrange(buffer.startIndex...index)
-            if let text = String(data: line, encoding: .utf8) { emit(text) }
-        }
-    }
-    if !buffer.isEmpty, let text = String(data: buffer, encoding: .utf8) { emit(text) }
 }

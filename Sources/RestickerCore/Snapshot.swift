@@ -5,6 +5,8 @@ public struct Snapshot: Decodable {
     public let id: String
     public let shortId: String
     public let time: Date
+    public let hostname: String?
+    public let paths: [String]?
     /// restic started recording a summary per snapshot only in recent versions, so older
     /// snapshots carry none. It is the same payload `restic backup --json` ends with.
     public let summary: BackupSummary?
@@ -16,6 +18,8 @@ public struct Snapshot: Decodable {
         case id
         case shortId = "short_id"
         case time
+        case hostname
+        case paths
         case summary
     }
 
@@ -50,12 +54,12 @@ enum ResticDate {
     }
 }
 
-/// Lists the newest snapshots off the main thread.
+/// Lists the newest snapshots off the main thread. Without a `limit` it lists them all.
 public enum SnapshotLister {
     public static func fetch(
         config: Config,
         secrets: RepositorySecrets,
-        limit: Int,
+        limit: Int?,
         completion: @escaping ([Snapshot]) -> Void
     ) {
         DispatchQueue.global(qos: .utility).async {
@@ -64,11 +68,11 @@ public enum SnapshotLister {
         }
     }
 
-    private static func run(config: Config, secrets: RepositorySecrets, limit: Int) -> [Snapshot] {
+    private static func run(config: Config, secrets: RepositorySecrets, limit: Int?) -> [Snapshot] {
         // `--latest` counts per host and path group, so it can return more than `limit`
         // rows. The list is cut to size again after decoding.
         let process = ResticProcess.make(config: config, secrets: secrets,
-                                         arguments: ["snapshots", "--json", "--latest", String(limit)])
+                                         arguments: ["snapshots", "--json"] + (limit.map { ["--latest", String($0)] } ?? []))
 
         let output = Pipe()
         process.standardOutput = output

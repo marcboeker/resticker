@@ -242,6 +242,6 @@ extension SettingsWindowController: NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        appDelegate.leaveRegularPolicyIfLastWindow(closing: window)
     }
 }
