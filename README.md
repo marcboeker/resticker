@@ -11,7 +11,7 @@ from sleep, shows the last backup time, how much data moved, and your recent
 snapshots right in the menu, and restores files from any snapshot in a few clicks.
 
 <p align="center">
-  <img src="docs/resticker.png" alt="Resticker menu bar dropdown" height="400">
+  <img src="docs/resticker.png?v=2" alt="Resticker menu bar dropdown" height="400">
   <img src="docs/settings.png" alt="Resticker settings window" height="400">
 </p>
 
